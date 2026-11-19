@@ -23,9 +23,11 @@ function normalizeMediaGallery(raw?: string): { url: string; alt: string; captio
   }
 }
 
-export const EventsPage: React.FC = () => {
-  const { t } = useApp();
+export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
+  const { t, navigate, settings } = useApp();
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [singleEvent, setSingleEvent] = useState<EventItem | null>(null);
+  const [loadingSingle, setLoadingSingle] = useState(false);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'completed'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -33,10 +35,49 @@ export const EventsPage: React.FC = () => {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    fetch('/api/public/events')
-      .then((r) => r.json())
-      .then((d) => setEvents(Array.isArray(d) ? d : []));
-  }, []);
+    if (eventId) {
+      setLoadingSingle(true);
+      fetch(`/api/public/events/${eventId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((ev: EventItem | null) => {
+          setSingleEvent(ev);
+          if (ev) {
+            const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
+            const pageTitle = `${ev.title_ar} | ${siteTitle}`;
+            const pageDesc = (ev.description_ar || settings.seo_description || ev.title_ar).replace(/\s+/g, ' ').trim().slice(0, 165);
+            const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+            const canonicalUrl = `${canonicalOrigin}/events/${ev.id}`;
+            document.title = pageTitle;
+            const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+            if (canonicalEl) canonicalEl.href = canonicalUrl;
+            const rawImg = ev.share_image_url || ev.cover_image || ev.logo_url || settings.og_image_url || settings.logo_url || '';
+            const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${canonicalOrigin}${rawImg.startsWith('/') ? rawImg : `/${rawImg}`}`) : '';
+            const updateMeta = (attr: 'name' | 'property', key: string, content: string) => {
+              if (!content) return;
+              const el = document.querySelector(`meta[${attr}="${key}"]`);
+              if (el) el.setAttribute('content', content);
+            };
+            updateMeta('name', 'description', pageDesc);
+            updateMeta('name', 'robots', 'index, follow');
+            updateMeta('property', 'og:title', pageTitle);
+            updateMeta('property', 'og:description', pageDesc);
+            updateMeta('property', 'og:url', canonicalUrl);
+            updateMeta('name', 'twitter:title', pageTitle);
+            updateMeta('name', 'twitter:description', pageDesc);
+            if (fullImg) {
+              updateMeta('property', 'og:image', fullImg);
+              updateMeta('name', 'twitter:image', fullImg);
+            }
+          }
+        })
+        .finally(() => setLoadingSingle(false));
+    } else {
+      setSingleEvent(null);
+      fetch('/api/public/events')
+        .then((r) => r.json())
+        .then((d) => setEvents(Array.isArray(d) ? d : []));
+    }
+  }, [eventId, settings]);
 
   const filtered = events.filter((e) => {
     if (filter !== 'all' && e.status !== filter) return false;
@@ -60,6 +101,101 @@ export const EventsPage: React.FC = () => {
       setMsg(data.error || 'تعذر التسجيل');
     }
   };
+
+  if (eventId) {
+    if (loadingSingle) {
+      return <div className="max-w-4xl mx-auto px-4 py-20 text-center text-slate-500">{t('جارٍ التحميل...', 'Loading...')}</div>;
+    }
+    if (!singleEvent) {
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-4">
+          <p className="text-slate-600">{t('الفعالية غير موجودة', 'Event not found')}</p>
+          <button type="button" onClick={() => navigate('/events')} className="px-4 py-2 bg-blue-700 text-white rounded-lg text-sm">
+            {t('العودة إلى الأنشطة والفعاليات', 'Back to Events')}
+          </button>
+        </div>
+      );
+    }
+    const extraImgs = normalizeMediaGallery(singleEvent.gallery_json);
+    return (
+      <div className="bg-slate-50 min-h-screen py-10">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 space-y-6">
+          <button type="button" onClick={() => navigate('/events')} className="text-sm font-medium text-blue-700 hover:underline">
+            {t('← العودة إلى جميع الأنشطة والفعاليات', '← Back to all events')}
+          </button>
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            {singleEvent.cover_image && (
+              <div className="aspect-[16/9] bg-slate-100 relative">
+                <SafeImage src={singleEvent.cover_image} alt={singleEvent.cover_alt || singleEvent.title_ar} fallbackTitle={singleEvent.title_ar} className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className="p-6 sm:p-10 space-y-5">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <span className="font-mono-num inline-flex items-center gap-1"><Calendar className="w-4 h-4 text-blue-700" /> {singleEvent.event_date}</span>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4 text-blue-700" /> {singleEvent.location}</span>
+                <span aria-hidden="true">·</span>
+                <span>{singleEvent.organizer}</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-950 font-display">{t(singleEvent.title_ar, singleEvent.title_en)}</h1>
+              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{t(singleEvent.description_ar, singleEvent.description_en)}</p>
+              {singleEvent.partners_text && (
+                <p className="text-sm text-slate-600"><strong>{t('الشركاء:', 'Partners:')}</strong> {singleEvent.partners_text}</p>
+              )}
+              {extraImgs.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                  {extraImgs.map((g, gi) => (
+                    <div key={gi} className="aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                      <SafeImage src={g.url} alt={g.alt || singleEvent.title_ar} className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="pt-4 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEvent(singleEvent);
+                    setMsg('');
+                  }}
+                  className="px-6 py-2.5 text-sm font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl"
+                >
+                  {t('سجل حضورك في الفعالية', 'Register for Event')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {selectedEvent && (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold font-display text-slate-950">{t('التسجيل في الفعالية', 'Event Registration')}</h3>
+                <button type="button" onClick={() => setSelectedEvent(null)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+              </div>
+              <p className="text-sm font-medium text-blue-700">{selectedEvent.title_ar}</p>
+              {msg ? (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
+                  <span>{msg}</span>
+                </div>
+              ) : (
+                <form onSubmit={handleRegister} className="space-y-3">
+                  <input required placeholder={t('الاسم بالكامل', 'Full Name')} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
+                  <input required type="email" placeholder={t('البريد الإلكتروني', 'Email')} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
+                  <input required placeholder={t('رقم الهاتف / واتساب', 'Phone / WhatsApp')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
+                  <input placeholder={t('المحافظة', 'Governorate')} value={form.governorate} onChange={(e) => setForm({ ...form, governorate: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
+                  <button type="submit" className="w-full py-2.5 text-sm font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl">
+                    {t('تأكيد التسجيل', 'Confirm Registration')}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -124,7 +260,18 @@ export const EventsPage: React.FC = () => {
                       <span aria-hidden="true">·</span>
                       <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-blue-700" /> {ev.location}</span>
                     </div>
-                    <h2 className="text-xl font-bold text-slate-950 font-display">{t(ev.title_ar, ev.title_en)}</h2>
+                    <h2 className="text-xl font-bold text-slate-950 font-display">
+                      <a
+                        href={`/events/${ev.id}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate(`/events/${ev.id}`);
+                        }}
+                        className="hover:text-blue-700 transition-colors"
+                      >
+                        {t(ev.title_ar, ev.title_en)}
+                      </a>
+                    </h2>
                     <p className="text-sm text-slate-600 leading-relaxed">{t(ev.description_ar, ev.description_en)}</p>
                     {ev.partners_text && <p className="text-xs text-slate-500">{t('الشركاء:', 'Partners:')} {ev.partners_text}</p>}
                     {extraImgs.length > 0 && (
@@ -137,18 +284,30 @@ export const EventsPage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-500">{ev.organizer}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedEvent(ev);
-                        setMsg('');
-                      }}
-                      className="px-4 py-2 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg"
-                    >
-                      {t('سجل حضورك الآن', 'Register Now')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`/events/${ev.id}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate(`/events/${ev.id}`);
+                        }}
+                        className="px-3 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg"
+                      >
+                        {t('التفاصيل', 'Details')}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEvent(ev);
+                          setMsg('');
+                        }}
+                        className="px-4 py-2 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg"
+                      >
+                        {t('سجل حضورك الآن', 'Register Now')}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

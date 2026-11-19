@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /assets/
+Allow: /uploads/
+
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /login
+Disallow: /member
+Disallow: /api/
+
+Sitemap: https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/sitemap.xml

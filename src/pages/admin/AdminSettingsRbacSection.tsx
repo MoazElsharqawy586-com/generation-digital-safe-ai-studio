@@ -147,6 +147,7 @@ export const AdminSettingsTab: React.FC = () => {
         <div><label className="block font-semibold mb-1">رابط TikTok</label><input value={form.tiktok_url || ''} onChange={(e) => setForm({ ...form, tiktok_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
         <div><label className="block font-semibold mb-1">عنوان SEO الرئيسي</label><input value={form.seo_title || ''} onChange={(e) => setForm({ ...form, seo_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
         <div className="sm:col-span-2"><label className="block font-semibold mb-1">وصف SEO (Meta Description)</label><input value={form.seo_description || ''} onChange={(e) => setForm({ ...form, seo_description: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+        <div className="sm:col-span-2"><label className="block font-semibold mb-1">الدومين الرسمي للموقع (اختياري لروابط Sitemap و Canonical — يُكتشف تلقائيًا عند تركه فارغًا)</label><input dir="ltr" placeholder="https://your-domain.com" value={form.site_url || ''} onChange={(e) => setForm({ ...form, site_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" /></div>
       </div>
     </form>
   );

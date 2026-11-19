@@ -49,9 +49,13 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
           setArticle(d);
           if (d) {
             const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
-            document.title = `${d.title_ar} | ${siteTitle}`;
+            const pageTitle = `${d.title_ar} | ${siteTitle}`;
+            const pageDesc = (d.excerpt_ar || d.content_ar || d.title_ar || '').replace(/\s+/g, ' ').trim().slice(0, 165);
+            const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+            const canonicalUrl = `${canonicalOrigin}/news/${encodeURIComponent(d.slug)}`;
+            document.title = pageTitle;
             const rawImg = d.share_image_url || d.cover_image || d.logo_url || settings.og_image_url || settings.logo_url || '';
-            const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${window.location.origin}${rawImg}`) : '';
+            const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${canonicalOrigin}${rawImg.startsWith('/') ? rawImg : `/${rawImg}`}`) : '';
             const updateMeta = (attr: 'name' | 'property', key: string, content: string) => {
               if (!content) return;
               let el = document.querySelector(`meta[${attr}="${key}"]`);
@@ -62,12 +66,16 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
               }
               el.setAttribute('content', content);
             };
-            updateMeta('property', 'og:title', `${d.title_ar} | ${siteTitle}`);
-            updateMeta('property', 'og:description', d.excerpt_ar || d.title_ar);
+            const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+            if (canonicalEl) canonicalEl.href = canonicalUrl;
+            updateMeta('name', 'description', pageDesc);
+            updateMeta('name', 'robots', 'index, follow');
+            updateMeta('property', 'og:title', pageTitle);
+            updateMeta('property', 'og:description', pageDesc);
             updateMeta('property', 'og:type', 'article');
-            updateMeta('property', 'og:url', window.location.href);
-            updateMeta('name', 'twitter:title', `${d.title_ar} | ${siteTitle}`);
-            updateMeta('name', 'twitter:description', d.excerpt_ar || d.title_ar);
+            updateMeta('property', 'og:url', canonicalUrl);
+            updateMeta('name', 'twitter:title', pageTitle);
+            updateMeta('name', 'twitter:description', pageDesc);
             if (fullImg) {
               updateMeta('property', 'og:image', fullImg);
               updateMeta('property', 'og:image:secure_url', fullImg);

@@ -15,13 +15,14 @@ export const VerifyPage: React.FC = () => {
   const [certRes, setCertRes] = useState<any>(null);
 
   const runVerify = async (type: 'card' | 'cert', code: string) => {
-    if (!code.trim()) return;
+    const normalized = code.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
+    if (!normalized) return;
     setLoading(true);
     setError('');
     setCardRes(null);
     setCertRes(null);
     try {
-      const url = type === 'card' ? `/api/public/verify/card/${encodeURIComponent(code.trim())}` : `/api/public/verify/certificate/${encodeURIComponent(code.trim())}`;
+      const url = type === 'card' ? `/api/public/verify/card/${encodeURIComponent(normalized)}` : `/api/public/verify/certificate/${encodeURIComponent(normalized)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'غير موجود');
@@ -36,7 +37,7 @@ export const VerifyPage: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const card = params.get('card');
+    const card = params.get('card') || params.get('token') || params.get('member') || params.get('nid');
     const cert = params.get('cert');
     if (card) {
       setMode('card');
@@ -103,7 +104,11 @@ export const VerifyPage: React.FC = () => {
               required
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={mode === 'card' ? t('أدخل رقم الكارنيه (CARD-...) أو رقم العضوية (SDG-...)', 'Enter Card or Member Number') : t('أدخل رقم الشهادة (CERT-...)', 'Enter Certificate Number')}
+              placeholder={
+                mode === 'card'
+                  ? t('أدخل رقم العضوية (000001) أو رقم الكارنيه (CARD-...) أو الرقم القومي (14 رقمًا)', 'Enter Member No. (000001), Card No., or National ID')
+                  : t('أدخل رقم الشهادة (CERT-...)', 'Enter Certificate Number')
+              }
               className="flex-1 px-4 py-3 text-sm border border-slate-300 rounded-xl font-mono-num"
             />
             <button type="submit" disabled={loading} className="px-6 py-3 text-sm font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl inline-flex items-center justify-center gap-2">
@@ -261,10 +266,10 @@ export const MemberPortalPage: React.FC = () => {
 
 export const LoginPage: React.FC = () => {
   const { t, applyAuthSession, navigate } = useApp();
-  const [mode, setMode] = useState<'login' | 'register' | 'activate' | 'bootstrap'>('login');
+  const [mode, setMode] = useState<'login' | 'bootstrap'>('login');
   const [needsAdminSetup, setNeedsAdminSetup] = useState(false);
   const [officialEmail, setOfficialEmail] = useState('generationdigitalsafe@gmail.com');
-  const [form, setForm] = useState({ name: '', email: '', password: '', verify_value: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -285,14 +290,7 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const endpoint =
-        mode === 'bootstrap'
-          ? '/api/auth/bootstrap-admin'
-          : mode === 'activate'
-            ? '/api/auth/activate-member-account'
-            : mode === 'register'
-              ? '/api/auth/register'
-              : '/api/auth/login';
+      const endpoint = mode === 'bootstrap' ? '/api/auth/bootstrap-admin' : '/api/auth/login';
       const res = await apiFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,11 +318,7 @@ export const LoginPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-950 font-display">
             {mode === 'bootstrap'
               ? t('تفعيل حساب المدير العام الأول', 'Activate Super Admin Account')
-              : mode === 'activate'
-                ? t('تفعيل كلمة مرور العضو', 'Activate Member Password')
-                : mode === 'register'
-                  ? t('إنشاء حساب عضو جديد', 'Create Member Account')
-                  : t('تسجيل الدخول إلى المنصة', 'Platform Login')}
+              : t('تسجيل الدخول إلى المنصة', 'Platform Login')}
           </h1>
           <p className="text-xs text-slate-500">{t('مبادرة جيل رقمي آمن — SAFE DIGITAL GENERATION', 'Safe Digital Generation Initiative')}</p>
         </div>
@@ -337,7 +331,7 @@ export const LoginPage: React.FC = () => {
               type="button"
               onClick={() => {
                 setMode('bootstrap');
-                setForm({ name: 'المدير العام — جيل رقمي آمن', email: officialEmail, password: '', verify_value: '' });
+                setForm({ name: 'المدير العام — جيل رقمي آمن', email: officialEmail, password: '' });
               }}
               className="px-3 py-1.5 bg-blue-700 text-white rounded-lg font-semibold"
             >
@@ -346,22 +340,10 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl text-[11px] font-semibold">
-          <button type="button" onClick={() => setMode('login')} className={`py-2 rounded-lg ${mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>
-            {t('تسجيل الدخول', 'Login')}
-          </button>
-          <button type="button" onClick={() => setMode('activate')} className={`py-2 rounded-lg ${mode === 'activate' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>
-            {t('تفعيل كلمة سر عضو', 'Activate Password')}
-          </button>
-          <button type="button" onClick={() => setMode('register')} className={`py-2 rounded-lg ${mode === 'register' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}>
-            {t('حساب جديد', 'Register')}
-          </button>
-        </div>
-
         {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {(mode === 'register' || mode === 'bootstrap') && (
+          {mode === 'bootstrap' && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">{t('الاسم الكامل', 'Full Name')}</label>
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
@@ -379,22 +361,8 @@ export const LoginPage: React.FC = () => {
               className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl read-only:bg-slate-100"
             />
           </div>
-          {mode === 'activate' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">{t('رقم الهاتف أو رقم العضوية أو رقم الطلب', 'Phone, Member No., or Application No.')}</label>
-              <input
-                required
-                value={form.verify_value}
-                onChange={(e) => setForm({ ...form, verify_value: e.target.value })}
-                placeholder={t('010... أو SDG-2026-... أو APP-2026-...', 'Phone / SDG-... / APP-...')}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl font-mono-num"
-              />
-            </div>
-          )}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {mode === 'activate' ? t('كلمة المرور الجديدة (8 أحرف على الأقل)', 'New Password (8+ chars)') : t('كلمة المرور', 'Password')}
-            </label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">{t('كلمة المرور', 'Password')}</label>
             <input
               required
               type="password"
@@ -411,13 +379,22 @@ export const LoginPage: React.FC = () => {
               ? t('جارٍ التنفيذ...', 'Processing...')
               : mode === 'bootstrap'
                 ? t('إنشاء وتفعيل حساب المدير العام', 'Create & Activate Super Admin')
-                : mode === 'activate'
-                  ? t('تفعيل كلمة المرور والدخول لبوابة العضو', 'Activate Password & Enter Portal')
-                  : mode === 'register'
-                    ? t('إنشاء حساب عضو', 'Register Member Account')
-                    : t('دخول', 'Sign In')}
+                : t('دخول', 'Sign In')}
           </button>
         </form>
+
+        {mode !== 'bootstrap' && (
+          <div className="pt-3 border-t border-slate-100 text-center space-y-1.5">
+            <p className="text-xs text-slate-500">{t('عضو جديد وتريد الانضمام للمبادرة؟', 'New applicant looking to join?')}</p>
+            <button
+              type="button"
+              onClick={() => navigate('/join')}
+              className="text-xs font-semibold text-blue-700 hover:text-blue-800 hover:underline"
+            >
+              {t('قدّم طلب الانضمام وأنشئ كلمة المرور الآن', 'Submit membership application & create password')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

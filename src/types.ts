@@ -211,6 +211,19 @@ export interface CardDesign {
   orientation: string;
   show_expiry: number;
   footer_note_ar: string;
+  header_title_ar?: string;
+  header_title_en?: string;
+  header_subtitle_ar?: string;
+  card_badge_ar?: string;
+  side_slogan_ar?: string;
+  verify_badge_ar?: string;
+  vp_title_ar?: string;
+  vp_names_ar?: string;
+  president_title_ar?: string;
+  president_name_ar?: string;
+  back_title_ar?: string;
+  back_slogan_ar?: string;
+  extra_rows_json?: string;
 }
 
 export interface CardLogo {

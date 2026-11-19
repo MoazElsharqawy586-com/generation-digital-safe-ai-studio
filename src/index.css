@@ -39,10 +39,10 @@
 
 @keyframes sdg-marquee-rtl {
   0% {
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(-50%, 0, 0);
   }
   100% {
-    transform: translate3d(50%, 0, 0);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -58,20 +58,6 @@
 
 .sdg-marquee-track.dir-rtl {
   animation: sdg-marquee-rtl var(--marquee-duration, 28s) linear infinite;
-}
-
-.sdg-marquee-wrapper:hover .sdg-marquee-track {
-  animation-play-state: paused;
-}
-
-.sdg-marquee-track.paused {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sdg-marquee-track {
-    animation-play-state: paused !important;
-  }
 }
 
 /* Dedicated print layout for Electronic Membership Cards & Certificates */

@@ -1,10 +1,76 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, ExternalLink, KeyRound, Mail, Phone, Search, ShieldCheck, Upload } from 'lucide-react';
+import { CheckCircle2, CreditCard, ExternalLink, Eye, EyeOff, Mail, Phone, Search, ShieldCheck, Upload } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
 import { ElectronicCardView } from '../components/ElectronicCardView';
 import { apiFetch } from '../lib/authFetch';
 import type { PartnerItem } from '../types';
+
+const AR_MONTHS = [
+  'يناير',
+  'فبراير',
+  'مارس',
+  'أبريل',
+  'مايو',
+  'يونيو',
+  'يوليو',
+  'أغسطس',
+  'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر'
+];
+
+function parseEgyptianNationalId(raw: string): {
+  clean: string;
+  isValid: boolean;
+  birthDateISO: string;
+  birthDateAr: string;
+  gender: 'ذكر' | 'أنثى' | '';
+  age: number | null;
+} {
+  const clean = raw
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/\D/g, '')
+    .slice(0, 14);
+
+  if (!/^[23]\d{13}$/.test(clean)) {
+    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
+  }
+
+  const century = clean[0] === '2' ? 1900 : 2000;
+  const year = century + Number(clean.slice(1, 3));
+  const month = Number(clean.slice(3, 5));
+  const day = Number(clean.slice(5, 7));
+
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
+  }
+
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  const now = new Date();
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== month - 1 ||
+    dt.getUTCDate() !== day ||
+    dt.getTime() > now.getTime()
+  ) {
+    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
+  }
+
+  const genderDigit = Number(clean[12]);
+  const gender: 'ذكر' | 'أنثى' = genderDigit % 2 === 1 ? 'ذكر' : 'أنثى';
+  const birthDateISO = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const birthDateAr = `${day} ${AR_MONTHS[month - 1]} ${year}`;
+
+  let age = now.getFullYear() - year;
+  const monthDiff = now.getMonth() + 1 - month;
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < day)) {
+    age--;
+  }
+
+  return { clean, isValid: true, birthDateISO, birthDateAr, gender, age: Math.max(0, age) };
+}
 
 export const JoinPage: React.FC = () => {
   const { committees, joinQuestions, t, navigate, applyAuthSession } = useApp();
@@ -20,10 +86,7 @@ export const JoinPage: React.FC = () => {
   } | null>(null);
   const [error, setError] = useState('');
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
-
-  // Inline password activation after card issuance
-  const [actPassword, setActPassword] = useState('');
-  const [actStatus, setActStatus] = useState<{ ok?: string; err?: string; loading?: boolean }>({});
+  const [showPassword, setShowPassword] = useState(false);
 
   const [form, setForm] = useState({
     full_name: '',
@@ -38,6 +101,7 @@ export const JoinPage: React.FC = () => {
     phone: '',
     whatsapp: '',
     email: '',
+    password: '',
     qualification: 'طالب جامعي',
     university_school: '',
     major: '',
@@ -50,6 +114,8 @@ export const JoinPage: React.FC = () => {
     availability: '5 - 10 ساعات أسبوعيًا',
     cv_url: ''
   });
+
+  const parsedNationalId = parseEgyptianNationalId(form.national_id_number);
 
   // Tracker state
   const [trackCode, setTrackCode] = useState('');
@@ -86,9 +152,29 @@ export const JoinPage: React.FC = () => {
     }
   };
 
+  const handleNationalIdChange = (raw: string) => {
+    const parsed = parseEgyptianNationalId(raw);
+    setForm((prev) => ({
+      ...prev,
+      national_id_number: parsed.clean,
+      ...(parsed.isValid ? { birth_date: parsed.birthDateISO, gender: parsed.gender } : {})
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!parsedNationalId.isValid) {
+      setError(t('يرجى إدخال رقم قومي مصري صحيح مكون من 14 رقمًا.', 'Please enter a valid 14-digit Egyptian National ID.'));
+      return;
+    }
+
+    if (form.password.length < 8) {
+      setError(t('كلمة المرور إلزامية ويجب أن تتكون من 8 أحرف على الأقل.', 'Password must be at least 8 characters long.'));
+      return;
+    }
+
     if (!form.national_id_front_url || !form.national_id_back_url) {
       setError(t('يرجى رفع صورة الوجه الأمامي والوجه الخلفي للبطاقة الشخصية.', 'Please upload both front and back photos of your National ID.'));
       return;
@@ -112,41 +198,27 @@ export const JoinPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      const payload = {
+        ...form,
+        birth_date: parsedNationalId.birthDateISO || form.birth_date,
+        gender: parsedNationalId.gender || form.gender,
+        custom_answers: structuredCustomAnswers
+      };
       const res = await fetch('/api/public/applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, custom_answers: structuredCustomAnswers })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'تعذر إرسال الطلب');
+      if (data.user && data.token) {
+        applyAuthSession(data.user, data.token);
+      }
       setResult(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleInlineActivate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!result) return;
-    setActStatus({ loading: true });
-    try {
-      const res = await apiFetch('/api/auth/activate-member-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.email,
-          identifier: result.member_number || result.application_number || form.phone,
-          password: actPassword
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'تعذر تفعيل كلمة المرور');
-      applyAuthSession(data.user, data.token);
-      setActStatus({ ok: t('تم تفعيل كلمة مرور حسابك بنجاح! يمكنك الآن الدخول إلى بوابة العضو.', 'Account password activated!') });
-    } catch (err: any) {
-      setActStatus({ err: err.message });
     }
   };
 
@@ -319,53 +391,14 @@ export const JoinPage: React.FC = () => {
               </div>
             )}
 
-            {/* Quick Member Password Activation */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 max-w-xl mx-auto space-y-4">
-              <div className="flex items-center gap-2 text-blue-700">
-                <KeyRound className="w-5 h-5" />
-                <h3 className="text-base font-bold text-slate-950 font-display">
-                  {t('تفعيل كلمة مرور حساب العضو (اختياري للدخول لاحقًا)', 'Activate Member Account Password')}
-                </h3>
-              </div>
-              <p className="text-xs text-slate-600">
-                {t('عيّن كلمة مرور لحسابك المسجل بالبريد الإلكتروني:', 'Set a password for your email:')} <strong className="font-mono-num">{form.email}</strong>
-              </p>
-
-              {actStatus.ok ? (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3 text-sm text-emerald-800">
-                  <p className="font-semibold">{actStatus.ok}</p>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/member')}
-                    className="px-4 py-2 text-xs font-semibold bg-emerald-700 text-white rounded-lg"
-                  >
-                    {t('الدخول إلى بوابة العضو الآن', 'Go to Member Portal')}
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleInlineActivate} className="flex flex-col sm:flex-row gap-3">
-                  <input
-                    required
-                    type="password"
-                    minLength={8}
-                    value={actPassword}
-                    onChange={(e) => setActPassword(e.target.value)}
-                    placeholder={t('كلمة مرور جديدة (8 أحرف على الأقل)', 'New Password (8+ chars)')}
-                    className="flex-1 px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
-                  />
-                  <button
-                    type="submit"
-                    disabled={actStatus.loading}
-                    className="px-5 py-2.5 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl whitespace-nowrap"
-                  >
-                    {actStatus.loading ? t('جارٍ التفعيل...', 'Activating...') : t('تفعيل كلمة المرور', 'Activate Password')}
-                  </button>
-                </form>
-              )}
-              {actStatus.err && <p className="text-xs text-red-600">{actStatus.err}</p>}
-            </div>
-
-            <div className="flex justify-center gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/member')}
+                className="px-6 py-2.5 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl"
+              >
+                {t('الدخول إلى بوابة العضو الآن', 'Go to Member Portal')}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -384,45 +417,128 @@ export const JoinPage: React.FC = () => {
             {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{error}</div>}
 
             {/* Section 1: Personal */}
-            <div className="space-y-4">
+            <div className="space-y-5">
               <h2 className="text-lg font-bold text-slate-950 font-display border-b border-slate-200 pb-2">
                 {t('1. البيانات الشخصية', '1. Personal Information')}
               </h2>
+
+              {/* Name & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('الاسم بالكامل', 'Full Name')} <span className="text-red-500">*</span>
+                  </label>
+                  <input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('رقم الهاتف', 'Phone')} <span className="text-red-500">*</span>
+                  </label>
+                  <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl font-mono-num" />
+                </div>
+              </div>
+
+              {/* Egyptian National ID + Auto-Extracted Summary Box */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-1.5">
+                    {t('الرقم القومي', 'National ID')} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    inputMode="numeric"
+                    maxLength={14}
+                    value={form.national_id_number}
+                    onChange={(e) => handleNationalIdChange(e.target.value)}
+                    placeholder={t('أدخل الرقم القومي المكون من 14 رقمًا', 'Enter your 14-digit National ID')}
+                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-xl font-mono-num bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600"
+                  />
+                  <div className="mt-1.5 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-medium">
+                      {parsedNationalId.clean.length === 14
+                        ? t('14 رقمًا', '14 digits')
+                        : `${parsedNationalId.clean.length} / 14 ${t('رقمًا', 'digits')}`}
+                    </span>
+                    {parsedNationalId.clean.length === 14 && !parsedNationalId.isValid && (
+                      <span className="text-red-600 font-semibold">
+                        {t('الرقم القومي غير صالح، تأكد من كتابة 14 رقمًا صحيحًا', 'Invalid Egyptian National ID')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-4 sm:p-5 space-y-3">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">{t('تاريخ الميلاد', 'Birth Date')}</p>
+                      <p className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
+                        {parsedNationalId.isValid ? parsedNationalId.birthDateAr : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">{t('النوع', 'Gender')}</p>
+                      <p className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
+                        {parsedNationalId.isValid ? parsedNationalId.gender : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">{t('السن', 'Age')}</p>
+                      <p className="text-sm sm:text-base font-bold text-slate-900 font-mono-num leading-snug">
+                        {parsedNationalId.isValid && parsedNationalId.age !== null ? parsedNationalId.age : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {t('يتم استخراج تاريخ الميلاد والنوع تلقائيًا من الرقم القومي.', 'Birth date and gender are automatically extracted from the National ID.')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Account Credentials, Location, WhatsApp & Photo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('الاسم بالكامل *', 'Full Name *')}</label>
-                  <input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('البريد الإلكتروني', 'Email')} <span className="text-red-500">*</span>
+                  </label>
+                  <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@example.com" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('تاريخ الميلاد', 'Birth Date')}</label>
-                  <input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('النوع', 'Gender')}</label>
-                  <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl">
-                    <option value="ذكر">{t('ذكر', 'Male')}</option>
-                    <option value="أنثى">{t('أنثى', 'Female')}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('المحافظة *', 'Governorate *')}</label>
-                  <input required value={form.governorate} onChange={(e) => setForm({ ...form, governorate: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" placeholder={t('القاهرة، الجيزة، الإسكندرية...', 'Cairo, Giza...')} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('المركز / المنطقة', 'District / Area')}</label>
-                  <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('رقم الهاتف *', 'Phone *')}</label>
-                  <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl font-mono-num" />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('كلمة المرور (للدخول لحسابك)', 'Account Password')} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      required
+                      type={showPassword ? 'text' : 'password'}
+                      minLength={8}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      placeholder={t('8 أحرف على الأقل', 'At least 8 characters')}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl pe-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? t('إخفاء كلمة المرور', 'Hide password') : t('إظهار كلمة المرور', 'Show password')}
+                      className="absolute inset-y-0 end-0 px-3 flex items-center text-slate-400 hover:text-slate-700"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">{t('رقم WhatsApp', 'WhatsApp')}</label>
                   <input value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl font-mono-num" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('البريد الإلكتروني *', 'Email *')}</label>
-                  <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('المحافظة', 'Governorate')} <span className="text-red-500">*</span>
+                  </label>
+                  <input required value={form.governorate} onChange={(e) => setForm({ ...form, governorate: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" placeholder={t('القاهرة، الجيزة، الإسكندرية...', 'Cairo, Giza...')} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('المركز / المنطقة', 'District / Area')}</label>
+                  <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">{t('الصورة الشخصية (للكارنيه)', 'Personal Photo')}</label>
@@ -458,28 +574,18 @@ export const JoinPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 2: National ID Photos & Number */}
+            {/* Section 2: National ID Photos */}
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <h2 className="text-lg font-bold text-slate-950 font-display">
-                  {t('2. بيانات وصور البطاقة الشخصية (معاينة قبل الإرسال)', '2. National ID Verification (Preview Before Submit)')}
+                  {t('2. صور البطاقة الشخصية (معاينة قبل الإرسال)', '2. National ID Photos (Preview Before Submit)')}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
                   <span>{t('محمية ومشفرة للإدارة فقط', 'Protected')}</span>
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('الرقم القومي (14 رقم)', 'National ID Number')}</label>
-                  <input
-                    value={form.national_id_number}
-                    onChange={(e) => setForm({ ...form, national_id_number: e.target.value })}
-                    placeholder="2990101..."
-                    maxLength={14}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl font-mono-num"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">{t('صورة البطاقة — الوجه الأمامي *', 'National ID — Front Side *')}</label>
                   <label className="flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50">

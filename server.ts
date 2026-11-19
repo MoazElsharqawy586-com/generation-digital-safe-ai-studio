@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import QRCode from 'qrcode';
 import { createServer as createViteServer } from 'vite';
-import { db, initDatabase, generateSafeCode } from './server/db.ts';
+import { db, initDatabase, generateSafeCode, generateNextMemberNumber } from './server/db.ts';
 import {
   type AuthedRequest,
   SESSION_COOKIE_NAME,
@@ -17,6 +17,15 @@ import {
   verifySession
 } from './server/auth.ts';
 import adminRoutes from './server/routes-admin.ts';
+import {
+  buildRobotsTxt,
+  buildSitemapXml,
+  getSettingsMap,
+  guessImageMime,
+  resolveBaseUrl,
+  syncPublicSeoFiles,
+  toPublicUrl
+} from './server/seo.ts';
 
 initDatabase();
 
@@ -237,12 +246,6 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 // ==================== PUBLIC API ROUTES (NO PII LEAKAGE) ====================
-function getSettingsMap(): Record<string, string> {
-  const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
-  const out: Record<string, string> = {};
-  for (const r of rows) out[r.key] = r.value;
-  return out;
-}
 
 app.get('/api/public/bootstrap', (_req, res) => {
   const settings = getSettingsMap();
@@ -346,6 +349,16 @@ app.get('/api/public/events', (_req, res) => {
   res.json(db.prepare('SELECT * FROM events ORDER BY event_date DESC').all());
 });
 
+app.get('/api/public/events/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  if (!item) {
+    res.status(404).json({ error: 'الفعالية غير موجودة' });
+    return;
+  }
+  res.json(item);
+});
+
 app.post('/api/public/events/:id/register', (req, res) => {
   const eventId = Number(req.params.id);
   const ev = db.prepare('SELECT id FROM events WHERE id = ?').get(eventId);
@@ -431,6 +444,24 @@ app.post('/api/public/upload-application-file', (req, res) => {
   });
 });
 
+function parseEgyptianNationalIdServer(raw: string): { birthDate: string; gender: 'ذكر' | 'أنثى' } | null {
+  const normalized = raw.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
+  if (!/^[23]\d{13}$/.test(normalized)) return null;
+  const century = normalized[0] === '2' ? 1900 : 2000;
+  const year = century + Number(normalized.slice(1, 3));
+  const month = Number(normalized.slice(3, 5));
+  const day = Number(normalized.slice(5, 7));
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day || dt.getTime() > Date.now()) {
+    return null;
+  }
+  const genderDigit = Number(normalized[12]);
+  const gender: 'ذكر' | 'أنثى' = genderDigit % 2 === 1 ? 'ذكر' : 'أنثى';
+  const birthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return { birthDate, gender };
+}
+
 app.post('/api/public/applications', async (req, res) => {
   try {
   const b = req.body;
@@ -440,7 +471,28 @@ app.post('/api/public/applications', async (req, res) => {
   }
 
   const normalizedEmail = String(b.email).trim().toLowerCase();
-  const normalizedPhone = String(b.phone).trim();
+  const normalizedPhone = String(b.phone).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
+  const normalizedNationalId = String(b.national_id_number || '')
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/\D/g, '');
+  const parsedId = parseEgyptianNationalIdServer(normalizedNationalId);
+  if (!parsedId) {
+    res.status(400).json({ error: 'يرجى إدخال رقم قومي مصري صحيح مكون من 14 رقمًا' });
+    return;
+  }
+
+  const password = String(b.password || '');
+  if (password.length < 8) {
+    res.status(400).json({ error: 'كلمة المرور إلزامية ويجب أن تكون 8 أحرف على الأقل' });
+    return;
+  }
+
+  const existingUser = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(normalizedEmail) as any;
+  if (existingUser) {
+    res.status(400).json({ error: 'هذا البريد الإلكتروني مسجل بالفعل، يمكنك تسجيل الدخول مباشرة' });
+    return;
+  }
+
   const allQuestions = db.prepare('SELECT id, question_ar, is_required FROM join_questions WHERE is_active = 1').all() as {
     id: number;
     question_ar: string;
@@ -476,10 +528,19 @@ app.post('/api/public/applications', async (req, res) => {
     }
   }
 
+  // Create member login account immediately with password set during Join
+  const passwordHash = bcrypt.hashSync(password, 12);
+  const userRes = db
+    .prepare("INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, 'member', 'active')")
+    .run(String(b.full_name).trim(), normalizedEmail, passwordHash);
+  const newUserId = Number(userRes.lastInsertRowid);
+
   const appNumber = generateSafeCode('APP');
   const settingsMap = getSettingsMap();
   const autoIssue = settingsMap.auto_issue_card_on_apply !== '0';
   const prefCommitteeId = b.preferred_committee_id ? Number(b.preferred_committee_id) : null;
+  const resolvedBirthDate = parsedId.birthDate || b.birth_date || '';
+  const resolvedGender = parsedId.gender || b.gender || '';
 
   const info = db
     .prepare(
@@ -495,8 +556,8 @@ app.post('/api/public/applications', async (req, res) => {
       appNumber,
       String(b.full_name).trim(),
       b.avatar_url || '',
-      b.birth_date || '',
-      b.gender || '',
+      resolvedBirthDate,
+      resolvedGender,
       b.governorate || '',
       b.area || '',
       normalizedPhone,
@@ -514,7 +575,7 @@ app.post('/api/public/applications', async (req, res) => {
       b.reason || '',
       b.availability || '',
       b.cv_url || '',
-      String(b.national_id_number || '').trim(),
+      normalizedNationalId,
       b.national_id_front_url || '',
       b.national_id_back_url || '',
       JSON.stringify(customAnswers),
@@ -535,22 +596,23 @@ app.post('/api/public/applications', async (req, res) => {
     const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
     if (!member) {
-      memberNumber = generateSafeCode('SDG');
+      memberNumber = generateNextMemberNumber();
       const mRes = db
         .prepare(
           `INSERT INTO members (
-             member_number, full_name, avatar_url, birth_date, gender, governorate, area,
+             user_id, member_number, full_name, avatar_url, birth_date, gender, governorate, area,
              phone, whatsapp, email, qualification, university_school, major, graduation_year,
              national_id_number, national_id_front_url, national_id_back_url,
              committee_id, position_title, status, joined_at, expires_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), ?)`
         )
         .run(
+          newUserId,
           memberNumber,
           String(b.full_name).trim(),
           b.avatar_url || '',
-          b.birth_date || '',
-          b.gender || '',
+          resolvedBirthDate,
+          resolvedGender,
           b.governorate || '',
           b.area || '',
           normalizedPhone,
@@ -560,7 +622,7 @@ app.post('/api/public/applications', async (req, res) => {
           b.university_school || '',
           b.major || '',
           b.graduation_year || '',
-          String(b.national_id_number || '').trim(),
+          normalizedNationalId,
           b.national_id_front_url || '',
           b.national_id_back_url || '',
           prefCommitteeId,
@@ -577,6 +639,9 @@ app.post('/api/public/applications', async (req, res) => {
       }
     } else {
       memberNumber = member.member_number;
+      if (!member.user_id) {
+        db.prepare('UPDATE members SET user_id = ? WHERE id = ?').run(newUserId, member.id);
+      }
     }
 
     let card = db.prepare("SELECT * FROM membership_cards WHERE member_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1").get(member.id) as any;
@@ -600,7 +665,8 @@ app.post('/api/public/applications', async (req, res) => {
       ? (db.prepare('SELECT name_ar FROM committees WHERE id = ?').get(member.committee_id) as { name_ar: string } | undefined)
       : undefined;
     const logos = db.prepare('SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').all();
-    const verifyUrl = `${req.protocol}://${req.get('host')}/verify?card=${encodeURIComponent(card.card_number)}`;
+    const baseUrl = resolveBaseUrl(req);
+    const verifyUrl = `${baseUrl}/verify?card=${encodeURIComponent(card.card_number)}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 240, margin: 1 });
 
     cardData = {
@@ -627,6 +693,12 @@ app.post('/api/public/applications', async (req, res) => {
      VALUES ('membership_manager', 'طلب عضوية جديد', ?, 'application', ?)`
   ).run(`تقدم ${b.full_name} بطلب انضمام برقم ${appNumber}${cardNumber ? ` (كارنيه: ${cardNumber})` : ''}`, appNumber);
 
+  const session = getFreshUserSession(newUserId);
+  const token = session ? signSession(session) : null;
+  if (token) {
+    res.cookie(SESSION_COOKIE_NAME, token, getCookieOptions(req));
+  }
+
   res.status(201).json({
     success: true,
     id: info.lastInsertRowid,
@@ -634,9 +706,11 @@ app.post('/api/public/applications', async (req, res) => {
     member_number: memberNumber,
     card_number: cardNumber,
     cardData,
+    user: session,
+    token,
     message: autoIssue
-      ? 'تم تسجيل طلبك وإصدار الكارنيه الإلكتروني الرسمي فورًا!'
-      : 'تم استلام طلب الانضمام بنجاح! يمكنك متابعة حالة طلبك باستخدام رقم الطلب ورقم الهاتف.'
+      ? 'تم تسجيل طلبك وإنشاء حسابك وإصدار الكارنيه الإلكتروني الرسمي فورًا!'
+      : 'تم استلام طلب الانضمام وإنشاء حسابك بنجاح! يمكنك متابعة حالة طلبك باستخدام رقم الطلب ورقم الهاتف.'
   });
   } catch (err) {
     console.error('Error in POST /api/public/applications:', err);
@@ -696,7 +770,10 @@ app.post('/api/public/contact', (req, res) => {
 
 // ==================== QR VERIFICATION & ELECTRONIC CARDS ====================
 app.get('/api/public/verify/card/:cardNumber', async (req, res) => {
-  const code = String(req.params.cardNumber || '').trim();
+  const rawCode = String(req.params.cardNumber || '').trim();
+  const normalizedCode = rawCode.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
+  const paddedNumeric = /^\d+$/.test(normalizedCode) && normalizedCode.length <= 6 ? normalizedCode.padStart(6, '0') : normalizedCode;
+
   const row = db
     .prepare(
       `SELECT mc.id, mc.card_number, mc.issue_date, mc.expiry_date, mc.status as card_status, mc.design_id,
@@ -705,12 +782,31 @@ app.get('/api/public/verify/card/:cardNumber', async (req, res) => {
        FROM membership_cards mc
        JOIN members m ON m.id = mc.member_id
        LEFT JOIN committees c ON c.id = m.committee_id
-       WHERE upper(mc.card_number) = upper(?) OR upper(m.member_number) = upper(?)`
+       WHERE upper(mc.card_number) = upper(?)
+          OR upper(m.member_number) = upper(?)
+          OR m.member_number = ?
+          OR m.national_id_number = ?
+          OR mc.qr_token = ?
+       ORDER BY mc.id DESC
+       LIMIT 1`
     )
-    .get(code, code) as any;
+    .get(normalizedCode, normalizedCode, paddedNumeric, normalizedCode, normalizedCode) as any;
 
   if (!row) {
-    res.status(404).json({ valid: false, error: 'رقم الكارنيه أو العضوية غير مسجل' });
+    if (/^[23]\d{13}$/.test(normalizedCode)) {
+      const pendingApp = db
+        .prepare('SELECT status, application_number FROM membership_applications WHERE national_id_number = ? ORDER BY id DESC LIMIT 1')
+        .get(normalizedCode) as { status: string; application_number: string } | undefined;
+      if (pendingApp) {
+        const msg =
+          pendingApp.status === 'rejected'
+            ? `الطلب المرتبط بهذا الرقم القومي (${pendingApp.application_number}) مرفوض حاليًا.`
+            : `الطلب (${pendingApp.application_number}) المرتبط بهذا الرقم القومي قيد المراجعة ولم يُصدر له كارنيه بعد.`;
+        res.status(404).json({ valid: false, error: msg });
+        return;
+      }
+    }
+    res.status(404).json({ valid: false, error: 'رقم الكارنيه أو رقم العضوية أو الرقم القومي غير مسجل' });
     return;
   }
 
@@ -718,10 +814,11 @@ app.get('/api/public/verify/card/:cardNumber', async (req, res) => {
     db.prepare('SELECT * FROM card_designs WHERE id = ?').get(row.design_id || 1) ||
     db.prepare('SELECT * FROM card_designs ORDER BY is_default DESC LIMIT 1').get();
   const logos = db
-    .prepare("SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC, id ASC")
+    .prepare('SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC, id ASC')
     .all();
 
-  const verifyUrl = `${req.protocol}://${req.get('host')}/verify?card=${encodeURIComponent(row.card_number)}`;
+  const baseUrl = resolveBaseUrl(req);
+  const verifyUrl = `${baseUrl}/verify?card=${encodeURIComponent(row.card_number)}`;
   const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 });
 
   res.json({
@@ -743,7 +840,8 @@ app.get('/api/public/verify/certificate/:certNumber', async (req, res) => {
     res.status(404).json({ valid: false, error: 'الشهادة غير موجودة' });
     return;
   }
-  const verifyUrl = `${req.protocol}://${req.get('host')}/verify?cert=${encodeURIComponent(cert.certificate_number)}`;
+  const baseUrl = resolveBaseUrl(req);
+  const verifyUrl = `${baseUrl}/verify?cert=${encodeURIComponent(cert.certificate_number)}`;
   const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 200, margin: 1 });
   res.json({ valid: cert.status === 'valid', certificate: cert, qrDataUrl, verifyUrl });
 });
@@ -772,7 +870,8 @@ app.get('/api/member/profile', requireAuth, async (req: AuthedRequest, res) => {
     if (card) {
       const design = db.prepare('SELECT * FROM card_designs WHERE id = ?').get(card.design_id || 1);
       const logos = db.prepare('SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC').all();
-      const verifyUrl = `${req.protocol}://${req.get('host')}/verify?card=${encodeURIComponent(card.card_number)}`;
+      const baseUrl = resolveBaseUrl(req);
+      const verifyUrl = `${baseUrl}/verify?card=${encodeURIComponent(card.card_number)}`;
       const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 });
       cardData = { card, design, logos, qrDataUrl };
     }
@@ -785,35 +884,6 @@ app.get('/api/member/profile', requireAuth, async (req: AuthedRequest, res) => {
 app.use('/api/admin', adminRoutes);
 
 // ==================== URL, GOOGLE VERIFICATION, MANIFEST, SITEMAP & ROBOTS ====================
-function resolveBaseUrl(req: express.Request): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
-  const host = (req.get('x-forwarded-host') || req.get('host') || 'localhost:3000').split(',')[0].trim();
-  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(host);
-  const proto = !isLocal ? 'https' : rawProto || 'http';
-  return `${proto}://${host}`.replace(/\/$/, '');
-}
-
-function toPublicUrl(rawUrl: string | undefined | null, baseUrl: string): string {
-  const cleaned = String(rawUrl || '').trim().replace('/src/assets/images/', '/assets/images/');
-  if (!cleaned) return `${baseUrl}/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg`;
-  if (/^https?:\/\//i.test(cleaned)) return cleaned;
-  return `${baseUrl}${cleaned.startsWith('/') ? cleaned : `/${cleaned}`}`;
-}
-
-function guessImageMime(url: string): string {
-  const lower = url.toLowerCase().split('?')[0];
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.svg')) return 'image/svg+xml';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.ico')) return 'image/x-icon';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  return 'image/jpeg';
-}
-
 // Explicit Google Search Console HTML Verification endpoint (never redirected to SPA)
 app.get('/googlef3c013b384f88d85.html', (_req, res) => {
   res.status(200).type('text/html; charset=utf-8').send('google-site-verification: googlef3c013b384f88d85.html');
@@ -851,63 +921,14 @@ app.get('/manifest.webmanifest', (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   const baseUrl = resolveBaseUrl(req);
-  res.type('text/plain').send(
-`User-agent: *
-Allow: /
-Allow: /assets/
-Allow: /uploads/
-Disallow: /admin
-Disallow: /api/
-Disallow: /member
-
-Sitemap: ${baseUrl}/sitemap.xml
-`
-  );
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.status(200).type('text/plain; charset=utf-8').send(buildRobotsTxt(baseUrl));
 });
 
 app.get('/sitemap.xml', (req, res) => {
   const baseUrl = resolveBaseUrl(req);
-  const today = new Date().toISOString().slice(0, 10);
-  const staticPaths = [
-    '/',
-    '/about',
-    '/goals',
-    '/leadership',
-    '/committees',
-    '/events',
-    '/news-and-events',
-    '/trainings',
-    '/news',
-    '/projects',
-    '/gallery',
-    '/join',
-    '/partners',
-    '/library',
-    '/contact',
-    '/verify'
-  ];
-  const newsSlugs = db.prepare("SELECT slug, updated_at, published_at FROM news WHERE status = 'published'").all() as {
-    slug: string;
-    updated_at: string;
-    published_at: string;
-  }[];
-  const committeeSlugs = db.prepare('SELECT slug FROM committees WHERE is_active = 1').all() as { slug: string }[];
-
-  const urls = [
-    ...staticPaths.map(
-      (p) => `<url><loc>${baseUrl}${p}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.8'}</priority></url>`
-    ),
-    ...committeeSlugs.map((c) => `<url><loc>${baseUrl}/committees/${c.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`),
-    ...newsSlugs.map(
-      (n) =>
-        `<url><loc>${baseUrl}/news/${encodeURIComponent(n.slug)}</loc><lastmod>${(n.updated_at || n.published_at || today).slice(0, 10)}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>`
-    )
-  ].join('\n  ');
-
-  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  ${urls}
-</urlset>`);
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.status(200).type('application/xml; charset=utf-8').send(buildSitemapXml(baseUrl));
 });
 
 // ==================== HTML SERVING + DYNAMIC ALL-ROUTE OPEN GRAPH, TWITTER CARDS & SCHEMA.ORG ====================
@@ -989,6 +1010,7 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
       desc: 'بوابة التحقق الرقمي الفوري من صحة كارنيه العضوية والشهادات الصادرة عن المبادرة.'
     },
     '/admin': { title: `لوحة الإدارة | ${settings.site_name_ar || 'جيل رقمي آمن'}`, desc: defaultDesc, noindex: true },
+    '/dashboard': { title: `لوحة التحكم | ${settings.site_name_ar || 'جيل رقمي آمن'}`, desc: defaultDesc, noindex: true },
     '/login': { title: `تسجيل الدخول | ${settings.site_name_ar || 'جيل رقمي آمن'}`, desc: defaultDesc, noindex: true },
     '/member': { title: `بوابة العضو والكارنيه الإلكتروني | ${settings.site_name_ar || 'جيل رقمي آمن'}`, desc: defaultDesc, noindex: true }
   };
@@ -1084,10 +1106,64 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
     const slug = decodeURIComponent(committeeMatch[1]);
     const com = db.prepare('SELECT * FROM committees WHERE slug = ? AND is_active = 1').get(slug) as any;
     if (com) {
+      canonicalUrl = `${baseUrl}/committees/${encodeURIComponent(com.slug)}`;
       pageTitle = `${com.name_ar} | ${settings.site_name_ar || 'جيل رقمي آمن'}`;
       pageDesc = (com.description_ar || defaultDesc).slice(0, 165);
       ogImage = toPublicUrl(com.logo_url || settings.og_image_url || settings.logo_url, baseUrl);
       ogImageAlt = com.name_ar;
+    }
+  }
+
+  // Dynamic Event Route (/events/:id)
+  const eventMatch = cleanPath.match(/^\/events\/(\d+)$/);
+  if (eventMatch) {
+    const evId = Number(eventMatch[1]);
+    const ev = db.prepare('SELECT * FROM events WHERE id = ?').get(evId) as any;
+    if (ev) {
+      canonicalUrl = `${baseUrl}/events/${ev.id}`;
+      pageTitle = `${ev.title_ar} | ${settings.site_name_ar || 'جيل رقمي آمن'}`;
+      pageDesc = (ev.description_ar || defaultDesc).replace(/\s+/g, ' ').trim().slice(0, 165);
+      ogImage = toPublicUrl(ev.share_image_url || ev.cover_image || ev.logo_url || settings.og_image_url || settings.logo_url, baseUrl);
+      ogImageAlt = ev.cover_alt || ev.title_ar;
+      graphItems.push({
+        '@type': 'Event',
+        name: ev.title_ar,
+        description: pageDesc,
+        startDate: ev.event_date,
+        image: [ogImage],
+        url: canonicalUrl,
+        eventStatus: ev.status === 'completed' ? 'https://schema.org/EventScheduled' : 'https://schema.org/EventScheduled',
+        location: {
+          '@type': 'Place',
+          name: ev.location || 'مصر',
+          address: ev.location || 'مصر'
+        },
+        organizer: {
+          '@type': 'Organization',
+          name: ev.organizer || siteName,
+          url: `${baseUrl}/`
+        }
+      });
+    }
+  }
+
+  // Structured data for Events & News-and-Events list pages
+  if (cleanPath === '/events' || cleanPath === '/news-and-events') {
+    const upcomingEvents = db.prepare('SELECT * FROM events ORDER BY event_date DESC LIMIT 10').all() as any[];
+    for (const ev of upcomingEvents) {
+      graphItems.push({
+        '@type': 'Event',
+        name: ev.title_ar,
+        description: (ev.description_ar || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+        startDate: ev.event_date,
+        url: `${baseUrl}/events/${ev.id}`,
+        image: [toPublicUrl(ev.cover_image || settings.og_image_url || settings.logo_url, baseUrl)],
+        location: {
+          '@type': 'Place',
+          name: ev.location || 'مصر'
+        },
+        organizer: { '@id': `${baseUrl}/#organization` }
+      });
     }
   }
 
@@ -1146,6 +1222,11 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
 }
 
 async function startServer() {
+  try {
+    syncPublicSeoFiles();
+  } catch (err) {
+    console.warn('SEO file sync warning:', err);
+  }
   if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },

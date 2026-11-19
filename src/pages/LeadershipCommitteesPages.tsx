@@ -91,7 +91,7 @@ export const LeadershipPage: React.FC = () => {
 };
 
 export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
-  const { committees, t, lang, navigate } = useApp();
+  const { committees, t, lang, navigate, settings } = useApp();
   const [detail, setDetail] = useState<{
     committee: Committee;
     members: CommitteeMember[];
@@ -110,9 +110,40 @@ export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
     setLoading(true);
     fetch(`/api/public/committees/${encodeURIComponent(slug)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setDetail(d))
+      .then((d) => {
+        setDetail(d);
+        if (d?.committee) {
+          const com = d.committee as Committee;
+          const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
+          const pageTitle = `${com.name_ar} | ${siteTitle}`;
+          const pageDesc = (com.description_ar || settings.seo_description || com.name_ar).slice(0, 165);
+          const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+          const canonicalUrl = `${canonicalOrigin}/committees/${encodeURIComponent(com.slug)}`;
+          document.title = pageTitle;
+          const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+          if (canonicalEl) canonicalEl.href = canonicalUrl;
+          const rawImg = com.logo_url || settings.og_image_url || settings.logo_url || '';
+          const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${canonicalOrigin}${rawImg.startsWith('/') ? rawImg : `/${rawImg}`}`) : '';
+          const updateMeta = (attr: 'name' | 'property', key: string, content: string) => {
+            if (!content) return;
+            const el = document.querySelector(`meta[${attr}="${key}"]`);
+            if (el) el.setAttribute('content', content);
+          };
+          updateMeta('name', 'description', pageDesc);
+          updateMeta('name', 'robots', 'index, follow');
+          updateMeta('property', 'og:title', pageTitle);
+          updateMeta('property', 'og:description', pageDesc);
+          updateMeta('property', 'og:url', canonicalUrl);
+          updateMeta('name', 'twitter:title', pageTitle);
+          updateMeta('name', 'twitter:description', pageDesc);
+          if (fullImg) {
+            updateMeta('property', 'og:image', fullImg);
+            updateMeta('name', 'twitter:image', fullImg);
+          }
+        }
+      })
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, settings]);
 
   if (slug) {
     if (loading) {

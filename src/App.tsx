@@ -15,7 +15,7 @@ const RouterView: React.FC = () => {
   const { currentPath } = useApp();
   const path = currentPath.replace(/\/+$/, '') || '/';
 
-  if (path === '/admin') {
+  if (path === '/admin' || path === '/dashboard') {
     return <AdminDashboard />;
   }
 
@@ -28,6 +28,7 @@ const RouterView: React.FC = () => {
   else if (path === '/committees') content = <CommitteesPage />;
   else if (path.startsWith('/committees/')) content = <CommitteesPage slug={decodeURIComponent(path.replace('/committees/', ''))} />;
   else if (path === '/events') content = <EventsPage />;
+  else if (/^\/events\/\d+$/.test(path)) content = <EventsPage eventId={Number(path.replace('/events/', ''))} />;
   else if (path === '/trainings') content = <TrainingsPage />;
   else if (path === '/news') content = <NewsPage />;
   else if (path === '/news-and-events') content = <NewsAndEventsPage />;

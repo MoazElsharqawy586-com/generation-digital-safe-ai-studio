@@ -495,6 +495,21 @@ function ensureSchemaMigrations() {
   ensureColumn('gallery', 'alt_text', "TEXT DEFAULT ''");
   ensureColumn('gallery', 'entity_type', "TEXT DEFAULT 'none'");
   ensureColumn('gallery', 'entity_id', 'INTEGER');
+
+  // Customizable electronic card design text, leadership signatures & custom fields
+  ensureColumn('card_designs', 'header_title_ar', "TEXT DEFAULT 'جيل رقمي آمن'");
+  ensureColumn('card_designs', 'header_title_en', "TEXT DEFAULT 'SAFE DIGITAL GENERATION'");
+  ensureColumn('card_designs', 'header_subtitle_ar', "TEXT DEFAULT 'معًا لمستقبل رقمي آمن'");
+  ensureColumn('card_designs', 'card_badge_ar', "TEXT DEFAULT 'كارنيه عضوية'");
+  ensureColumn('card_designs', 'side_slogan_ar', "TEXT DEFAULT 'جيل واعٍ .. مجتمع أكثر أماناً'");
+  ensureColumn('card_designs', 'verify_badge_ar', "TEXT DEFAULT 'تحقق من صحة الكارنيه'");
+  ensureColumn('card_designs', 'vp_title_ar', "TEXT DEFAULT 'نائب رئيس المبادرة'");
+  ensureColumn('card_designs', 'vp_names_ar', "TEXT DEFAULT 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح'");
+  ensureColumn('card_designs', 'president_title_ar', "TEXT DEFAULT 'رئيس المبادرة'");
+  ensureColumn('card_designs', 'president_name_ar', "TEXT DEFAULT 'أ. معاذ الشرقاوي'");
+  ensureColumn('card_designs', 'back_title_ar', "TEXT DEFAULT 'شركاء النجاح والشراكات المؤسسية'");
+  ensureColumn('card_designs', 'back_slogan_ar', "TEXT DEFAULT 'معاً ... نبني مجتمعاً رقمياً آمناً'");
+  ensureColumn('card_designs', 'extra_rows_json', "TEXT DEFAULT '[]'");
 }
 
 const OFFICIAL_SDG_LOGO = '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg';
@@ -1156,4 +1171,22 @@ export function generateSafeCode(prefix: string): string {
   const year = new Date().getFullYear();
   const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `${prefix}-${year}-${rand}`;
+}
+
+export function generateNextMemberNumber(): string {
+  const row = db
+    .prepare(
+      `SELECT MAX(CAST(member_number AS INTEGER)) as max_num
+       FROM members
+       WHERE member_number GLOB '[0-9]*' AND member_number NOT GLOB '*[^0-9]*'`
+    )
+    .get() as { max_num: number | null } | undefined;
+
+  let next = Math.max(0, Number(row?.max_num || 0)) + 1;
+  while (true) {
+    const formatted = next <= 999999 ? String(next).padStart(6, '0') : String(next);
+    const exists = db.prepare('SELECT 1 FROM members WHERE member_number = ?').get(formatted);
+    if (!exists) return formatted;
+    next++;
+  }
 }

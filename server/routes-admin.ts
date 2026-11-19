@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { db, generateSafeCode } from './db.ts';
+import { db, generateSafeCode, generateNextMemberNumber } from './db.ts';
 import {
   type AuthedRequest,
   PERMISSION_GROUPS,
@@ -14,6 +14,7 @@ import {
   requirePermission,
   requireSuperAdmin
 } from './auth.ts';
+import { syncPublicSeoFiles } from './seo.ts';
 
 const router = Router();
 router.use(requireAuth);
@@ -171,18 +172,20 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
       .get(appRow.email, appRow.phone) as any;
 
     if (!existingMember) {
-      const memberNumber = generateSafeCode('SDG');
+      const matchedUser = db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(appRow.email) as { id: number } | undefined;
+      const memberNumber = generateNextMemberNumber();
       const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const mRes = db
         .prepare(
           `INSERT INTO members (
-             member_number, full_name, avatar_url, birth_date, gender, governorate, area,
+             user_id, member_number, full_name, avatar_url, birth_date, gender, governorate, area,
              phone, whatsapp, email, qualification, university_school, major, graduation_year,
              national_id_number, national_id_front_url, national_id_back_url,
              committee_id, position_title, status, joined_at, expires_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), ?)`
         )
         .run(
+          matchedUser?.id || null,
           memberNumber,
           appRow.full_name,
           appRow.avatar_url || '',
@@ -371,7 +374,7 @@ router.post('/members', requirePermission('members:create'), (req: AuthedRequest
     res.status(400).json({ error: 'الاسم مطلوب' });
     return;
   }
-  const memberNumber = b.member_number || generateSafeCode('SDG');
+  const memberNumber = (b.member_number && String(b.member_number).trim()) || generateNextMemberNumber();
   const expiresAt = b.expires_at || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const info = db
     .prepare(
@@ -573,10 +576,21 @@ router.patch('/card-designs/:id', requirePermission('cards'), (req: AuthedReques
     return;
   }
   const b = req.body;
+  const extraRowsJson =
+    b.extra_rows_json !== undefined
+      ? typeof b.extra_rows_json === 'string'
+        ? b.extra_rows_json
+        : JSON.stringify(b.extra_rows_json)
+      : existing.extra_rows_json || '[]';
+
   db.prepare(
     `UPDATE card_designs SET
       name = ?, card_type = ?, front_bg = ?, back_bg = ?, accent_color = ?, text_color = ?,
-      orientation = ?, show_expiry = ?, footer_note_ar = ?, updated_at = datetime('now')
+      orientation = ?, show_expiry = ?, footer_note_ar = ?,
+      header_title_ar = ?, header_title_en = ?, header_subtitle_ar = ?, card_badge_ar = ?,
+      side_slogan_ar = ?, verify_badge_ar = ?, vp_title_ar = ?, vp_names_ar = ?,
+      president_title_ar = ?, president_name_ar = ?, back_title_ar = ?, back_slogan_ar = ?,
+      extra_rows_json = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     b.name ?? existing.name,
@@ -588,6 +602,19 @@ router.patch('/card-designs/:id', requirePermission('cards'), (req: AuthedReques
     b.orientation ?? existing.orientation,
     b.show_expiry !== undefined ? (b.show_expiry ? 1 : 0) : existing.show_expiry,
     b.footer_note_ar ?? existing.footer_note_ar,
+    b.header_title_ar ?? existing.header_title_ar ?? 'جيل رقمي آمن',
+    b.header_title_en ?? existing.header_title_en ?? 'SAFE DIGITAL GENERATION',
+    b.header_subtitle_ar ?? existing.header_subtitle_ar ?? 'معًا لمستقبل رقمي آمن',
+    b.card_badge_ar ?? existing.card_badge_ar ?? 'كارنيه عضوية',
+    b.side_slogan_ar ?? existing.side_slogan_ar ?? 'جيل واعٍ .. مجتمع أكثر أماناً',
+    b.verify_badge_ar ?? existing.verify_badge_ar ?? 'تحقق من صحة الكارنيه',
+    b.vp_title_ar ?? existing.vp_title_ar ?? 'نائب رئيس المبادرة',
+    b.vp_names_ar ?? existing.vp_names_ar ?? 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح',
+    b.president_title_ar ?? existing.president_title_ar ?? 'رئيس المبادرة',
+    b.president_name_ar ?? existing.president_name_ar ?? 'أ. معاذ الشرقاوي',
+    b.back_title_ar ?? existing.back_title_ar ?? 'شركاء النجاح والشراكات المؤسسية',
+    b.back_slogan_ar ?? existing.back_slogan_ar ?? 'معاً ... نبني مجتمعاً رقمياً آمناً',
+    extraRowsJson,
     id
   );
   logAudit(req, 'update', 'card_design', id, b);
@@ -762,6 +789,7 @@ router.post('/committees', requirePermission('committees'), (req: AuthedRequest,
       b.is_active !== false ? 1 : 0
     );
   logAudit(req, 'create', 'committee', info.lastInsertRowid, { name_ar: b.name_ar });
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM committees WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -790,6 +818,7 @@ router.patch('/committees/:id', requirePermission('committees'), (req: AuthedReq
     id
   );
   logAudit(req, 'update', 'committee', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM committees WHERE id = ?').get(id));
 });
 
@@ -797,6 +826,7 @@ router.delete('/committees/:id', requirePermission('committees'), (req: AuthedRe
   const id = Number(req.params.id);
   db.prepare('DELETE FROM committees WHERE id = ?').run(id);
   logAudit(req, 'delete', 'committee', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -886,6 +916,7 @@ router.post('/news', requirePermission('news'), (req: AuthedRequest, res: Respon
       b.published_at || new Date().toISOString()
     );
   logAudit(req, 'create', 'news', info.lastInsertRowid, { slug });
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM news WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -929,6 +960,7 @@ router.patch('/news/:id', requirePermission('news'), (req: AuthedRequest, res: R
     id
   );
   logAudit(req, 'update', 'news', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM news WHERE id = ?').get(id));
 });
 
@@ -936,6 +968,7 @@ router.delete('/news/:id', requirePermission('news'), (req: AuthedRequest, res: 
   const id = Number(req.params.id);
   db.prepare('DELETE FROM news WHERE id = ?').run(id);
   logAudit(req, 'delete', 'news', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -978,6 +1011,7 @@ router.post('/events', requirePermission('events'), (req: AuthedRequest, res: Re
       b.committee_id ? Number(b.committee_id) : null
     );
   logAudit(req, 'create', 'event', info.lastInsertRowid);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1020,6 +1054,7 @@ router.patch('/events/:id', requirePermission('events'), (req: AuthedRequest, re
     id
   );
   logAudit(req, 'update', 'event', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(id));
 });
 
@@ -1027,6 +1062,7 @@ router.delete('/events/:id', requirePermission('events'), (req: AuthedRequest, r
   const id = Number(req.params.id);
   db.prepare('DELETE FROM events WHERE id = ?').run(id);
   logAudit(req, 'delete', 'event', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1062,6 +1098,7 @@ router.post('/trainings', requirePermission('trainings'), (req: AuthedRequest, r
       b.registration_status || 'open'
     );
   logAudit(req, 'create', 'training', info.lastInsertRowid);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM trainings WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1094,6 +1131,7 @@ router.patch('/trainings/:id', requirePermission('trainings'), (req: AuthedReque
     id
   );
   logAudit(req, 'update', 'training', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM trainings WHERE id = ?').get(id));
 });
 
@@ -1101,6 +1139,7 @@ router.delete('/trainings/:id', requirePermission('trainings'), (req: AuthedRequ
   const id = Number(req.params.id);
   db.prepare('DELETE FROM trainings WHERE id = ?').run(id);
   logAudit(req, 'delete', 'training', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1146,6 +1185,7 @@ router.post('/projects', requirePermission('projects'), (req: AuthedRequest, res
       b.status || 'active'
     );
   logAudit(req, 'create', 'project', info.lastInsertRowid);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1185,6 +1225,7 @@ router.patch('/projects/:id', requirePermission('projects'), (req: AuthedRequest
     id
   );
   logAudit(req, 'update', 'project', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
 });
 
@@ -1192,6 +1233,7 @@ router.delete('/projects/:id', requirePermission('projects'), (req: AuthedReques
   const id = Number(req.params.id);
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   logAudit(req, 'delete', 'project', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1226,6 +1268,7 @@ router.post('/partners', requirePermission('partners'), (req: AuthedRequest, res
     Number(b.marquee_order ?? 10)
   );
   logAudit(req, 'create', 'partner', info.lastInsertRowid, { name_ar: b.name_ar });
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM partners WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1254,6 +1297,7 @@ router.patch('/partners/:id', requirePermission('partners'), (req: AuthedRequest
     id
   );
   logAudit(req, 'update', 'partner', id, b);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM partners WHERE id = ?').get(id));
 });
 
@@ -1261,6 +1305,7 @@ router.delete('/partners/:id', requirePermission('partners'), (req: AuthedReques
   const id = Number(req.params.id);
   db.prepare('DELETE FROM partners WHERE id = ?').run(id);
   logAudit(req, 'delete', 'partner', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1330,6 +1375,7 @@ router.post('/gallery', requirePermission('media'), (req: AuthedRequest, res: Re
       entityId
     );
   logAudit(req, 'create', 'gallery', info.lastInsertRowid);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM gallery WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1405,6 +1451,7 @@ router.delete('/gallery/:id', requirePermission('media'), (req: AuthedRequest, r
   const id = Number(req.params.id);
   db.prepare('DELETE FROM gallery WHERE id = ?').run(id);
   logAudit(req, 'delete', 'gallery', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1621,6 +1668,7 @@ router.post('/library', requirePermission('library'), (req: AuthedRequest, res: 
       b.is_published !== false ? 1 : 0
     );
   logAudit(req, 'create', 'digital_library', info.lastInsertRowid);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM digital_library WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1648,6 +1696,7 @@ router.patch('/library/:id', requirePermission('library'), (req: AuthedRequest, 
     id
   );
   logAudit(req, 'update', 'digital_library', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM digital_library WHERE id = ?').get(id));
 });
 
@@ -1655,6 +1704,7 @@ router.delete('/library/:id', requirePermission('library'), (req: AuthedRequest,
   const id = Number(req.params.id);
   db.prepare('DELETE FROM digital_library WHERE id = ?').run(id);
   logAudit(req, 'delete', 'digital_library', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -1688,6 +1738,7 @@ router.put('/settings', requirePermission('settings'), (req: AuthedRequest, res:
   });
   tx();
   logAudit(req, 'update_settings', 'settings', 'global', { keys: entries.map(([k]) => k) });
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
