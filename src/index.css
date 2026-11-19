@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+:root {
+  --sdg-navy: #0a192f;
+  --sdg-primary: #1d4ed8;
+  --sdg-cyan: #06b6d4;
+  --sdg-surface: #f8fafc;
+  --sdg-silver: #cbd5e1;
+  --font-display: 'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Continuous seamless partner marquee */
+@keyframes sdg-marquee-ltr {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes sdg-marquee-rtl {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(50%, 0, 0);
+  }
+}
+
+.sdg-marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+.sdg-marquee-track.dir-ltr {
+  animation: sdg-marquee-ltr var(--marquee-duration, 28s) linear infinite;
+}
+
+.sdg-marquee-track.dir-rtl {
+  animation: sdg-marquee-rtl var(--marquee-duration, 28s) linear infinite;
+}
+
+.sdg-marquee-wrapper:hover .sdg-marquee-track {
+  animation-play-state: paused;
+}
+
+.sdg-marquee-track.paused {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdg-marquee-track {
+    animation-play-state: paused !important;
+  }
+}
+
+/* Dedicated print layout for Electronic Membership Cards & Certificates */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+  .print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    margin: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
