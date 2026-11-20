@@ -4,23 +4,54 @@ import { useApp } from '../context/AppContext';
 import { ElectronicCardView } from '../components/ElectronicCardView';
 import { CertificateView } from '../components/CertificateView';
 import { apiFetch } from '../lib/authFetch';
+import { normalizeArabicDigits, parseEgyptianNationalId, type ParsedEgyptianNationalId } from '../lib/egyptianNationalId';
+import { trackEvent } from '../lib/analytics';
 
 export const VerifyPage: React.FC = () => {
-  const { t } = useApp();
-  const [mode, setMode] = useState<'card' | 'cert'>('card');
+  const { t, navigate } = useApp();
+  const [mode, setMode] = useState<'card' | 'cert' | 'nid'>('card');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cardRes, setCardRes] = useState<any>(null);
   const [certRes, setCertRes] = useState<any>(null);
+  const [nidCivil, setNidCivil] = useState<ParsedEgyptianNationalId | null>(null);
 
-  const runVerify = async (type: 'card' | 'cert', code: string) => {
-    const normalized = code.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).trim();
+  const runVerify = async (type: 'card' | 'cert' | 'nid', code: string) => {
+    const normalized = normalizeArabicDigits(code).trim();
     if (!normalized) return;
     setLoading(true);
     setError('');
     setCardRes(null);
     setCertRes(null);
+    setNidCivil(null);
+
+    if (type === 'nid') {
+      const parsed = parseEgyptianNationalId(normalized);
+      setNidCivil(parsed);
+      if (!parsed.isValid) {
+        setError(parsed.errorAr || t('يرجى إدخال رقم قومي مصري صحيح مكون من 14 رقمًا.', 'Please enter a valid 14-digit Egyptian National ID.'));
+        trackEvent('verify_lookup', { mode: 'nid', found: false, civil_valid: false });
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/public/verify/card/${encodeURIComponent(parsed.clean)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCardRes(data);
+          trackEvent('verify_lookup', { mode: 'nid', found: true, civil_valid: true });
+        } else {
+          trackEvent('verify_lookup', { mode: 'nid', found: false, civil_valid: true });
+        }
+      } catch {
+        trackEvent('verify_lookup', { mode: 'nid', found: false, civil_valid: true });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const url = type === 'card' ? `/api/public/verify/card/${encodeURIComponent(normalized)}` : `/api/public/verify/certificate/${encodeURIComponent(normalized)}`;
       const res = await fetch(url);
@@ -28,7 +59,9 @@ export const VerifyPage: React.FC = () => {
       if (!res.ok) throw new Error(data.error || 'غير موجود');
       if (type === 'card') setCardRes(data);
       else setCertRes(data);
+      trackEvent('verify_lookup', { mode: type, found: true });
     } catch (e: any) {
+      trackEvent('verify_lookup', { mode: type, found: false });
       setError(e.message);
     } finally {
       setLoading(false);
@@ -37,9 +70,14 @@ export const VerifyPage: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const card = params.get('card') || params.get('token') || params.get('member') || params.get('nid');
+    const nid = params.get('nid');
+    const card = params.get('card') || params.get('token') || params.get('member');
     const cert = params.get('cert');
-    if (card) {
+    if (nid) {
+      setMode('nid');
+      setQuery(nid);
+      runVerify('nid', nid);
+    } else if (card) {
       setMode('card');
       setQuery(card);
       runVerify('card', card);
@@ -58,18 +96,19 @@ export const VerifyPage: React.FC = () => {
             <QrCode className="w-4 h-4" />
             <span>{t('نظام التوثيق والتحقق الرقمي', 'QR Digital Verification')}</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold font-display">{t('التحقق من صحة العضوية والشهادات', 'Verify Cards & Certificates')}</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold font-display">{t('التحقق من صحة العضوية والشهادات والرقم القومي', 'Verify Cards, Certificates & National ID')}</h1>
         </div>
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
         <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
                 setMode('card');
                 setError('');
+                setNidCivil(null);
               }}
               className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl border ${
                 mode === 'card' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
@@ -81,8 +120,23 @@ export const VerifyPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                setMode('nid');
+                setError('');
+                setCertRes(null);
+              }}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl border ${
+                mode === 'nid' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>{t('التحقق من الرقم القومي', 'Verify National ID')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setMode('cert');
                 setError('');
+                setNidCivil(null);
               }}
               className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl border ${
                 mode === 'cert' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
@@ -102,18 +156,22 @@ export const VerifyPage: React.FC = () => {
           >
             <input
               required
+              inputMode={mode === 'nid' ? 'numeric' : undefined}
+              maxLength={mode === 'nid' ? 14 : undefined}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={
-                mode === 'card'
-                  ? t('أدخل رقم العضوية (000001) أو رقم الكارنيه (CARD-...) أو الرقم القومي (14 رقمًا)', 'Enter Member No. (000001), Card No., or National ID')
-                  : t('أدخل رقم الشهادة (CERT-...)', 'Enter Certificate Number')
+                mode === 'nid'
+                  ? t('أدخل الرقم القومي المصري المكون من 14 رقمًا لفحصه والتحقق من العضوية', 'Enter 14-digit Egyptian National ID')
+                  : mode === 'card'
+                    ? t('أدخل رقم العضوية (000001) أو رقم الكارنيه (CARD-...) أو الرقم القومي (14 رقمًا)', 'Enter Member No. (000001), Card No., or National ID')
+                    : t('أدخل رقم الشهادة (CERT-...)', 'Enter Certificate Number')
               }
               className="flex-1 px-4 py-3 text-sm border border-slate-300 rounded-xl font-mono-num"
             />
             <button type="submit" disabled={loading} className="px-6 py-3 text-sm font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl inline-flex items-center justify-center gap-2">
               <Search className="w-4 h-4" />
-              <span>{loading ? t('جارٍ التحقق...', 'Checking...') : t('تحقق الآن', 'Verify')}</span>
+              <span>{loading ? t('جارٍ التحقق...', 'Checking...') : mode === 'nid' ? t('فحص وتحقق', 'Inspect & Verify') : t('تحقق الآن', 'Verify')}</span>
             </button>
           </form>
 
@@ -125,13 +183,69 @@ export const VerifyPage: React.FC = () => {
           )}
         </div>
 
+        {/* Egyptian National ID Civil Verification Unit Output */}
+        {mode === 'nid' && nidCivil?.isValid && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-950 font-display">{t('وحدة فحص وتحقق الرقم القومي', 'National ID Verification Unit')}</h2>
+                  <p className="text-xs text-slate-500 font-mono-num">{nidCivil.clean}</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                {t('رقم قومي مصري صحيح (14 رقمًا)', 'Valid Egyptian National ID (14 digits)')}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-4">
+              <div>
+                <p className="text-xs text-slate-500 mb-1">{t('تاريخ الميلاد', 'Birth Date')}</p>
+                <p className="text-sm sm:text-base font-bold text-slate-900">{nidCivil.birthDateAr}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">{t('النوع', 'Gender')}</p>
+                <p className="text-sm sm:text-base font-bold text-slate-900">{nidCivil.gender}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">{t('السن', 'Age')}</p>
+                <p className="text-sm sm:text-base font-bold text-slate-900 font-mono-num">{nidCivil.age} {t('سنة', 'yrs')}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">{t('محافظة الميلاد', 'Birth Governorate')}</p>
+                <p className="text-sm sm:text-base font-bold text-slate-900">
+                  {nidCivil.governorate} <span className="text-xs font-mono-num text-slate-500">({nidCivil.governorateCode})</span>
+                </p>
+              </div>
+            </div>
+
+            {!cardRes && (
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-700">
+                <span>{t('الرقم القومي صحيح مدنيًا، ولا يوجد له كارنيه عضوية نشط مسجل بالمبادرة حاليًا.', 'National ID is civilly valid, with no active initiative card registered under this ID.')}</span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/join')}
+                  className="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-semibold"
+                >
+                  {t('التقديم على العضوية الآن', 'Apply for Membership')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {cardRes && (
           <div className="space-y-6">
             <div className={`p-4 rounded-xl border flex items-center gap-3 text-sm font-semibold ${cardRes.valid ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
               <ShieldCheck className="w-5 h-5 shrink-0" />
               <span>
                 {cardRes.valid
-                  ? t(`عضوية موثقة وسارية — ${cardRes.card.full_name}`, `Verified Active Membership — ${cardRes.card.full_name}`)
+                  ? !cardRes.card.expiry_date
+                    ? t(`عضوية قيادية موثقة وسارية (دائمة بدون تاريخ انتهاء) — ${cardRes.card.full_name}`, `Verified Permanent Leadership Card — ${cardRes.card.full_name}`)
+                    : t(`عضوية موثقة وسارية — ${cardRes.card.full_name}`, `Verified Active Membership — ${cardRes.card.full_name}`)
                   : t('هذه البطاقة موقوفة أو منتهية الصلاحية', 'This membership card is suspended or expired')}
               </span>
             </div>

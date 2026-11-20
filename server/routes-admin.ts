@@ -153,15 +153,51 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
     return;
   }
 
-  const { status, assigned_committee_id, position_title, admin_notes, issue_card } = req.body;
+  const b = req.body;
+  const { status, assigned_committee_id, position_title, admin_notes, issue_card } = b;
   const nextStatus = status || appRow.status;
-  const committeeId = assigned_committee_id ? Number(assigned_committee_id) : appRow.assigned_committee_id || appRow.preferred_committee_id;
+  const committeeId =
+    assigned_committee_id !== undefined
+      ? assigned_committee_id
+        ? Number(assigned_committee_id)
+        : null
+      : appRow.assigned_committee_id || appRow.preferred_committee_id;
 
   db.prepare(
     `UPDATE membership_applications
-     SET status = ?, assigned_committee_id = ?, admin_notes = ?, reviewed_by = ?, reviewed_at = datetime('now')
+     SET full_name = ?, phone = ?, whatsapp = ?, email = ?, governorate = ?, area = ?,
+         national_id_number = ?, qualification = ?, university_school = ?, major = ?, graduation_year = ?,
+         preferred_committee_id = ?, skills = ?, experiences = ?, reason = ?,
+         status = ?, assigned_committee_id = ?, admin_notes = ?, reviewed_by = ?, reviewed_at = datetime('now')
      WHERE id = ?`
-  ).run(nextStatus, committeeId || null, admin_notes ?? appRow.admin_notes, req.user?.email || '', id);
+  ).run(
+    b.full_name ?? appRow.full_name,
+    b.phone ?? appRow.phone,
+    b.whatsapp ?? appRow.whatsapp,
+    b.email ?? appRow.email,
+    b.governorate ?? appRow.governorate,
+    b.area ?? appRow.area,
+    b.national_id_number ?? appRow.national_id_number,
+    b.qualification ?? appRow.qualification,
+    b.university_school ?? appRow.university_school,
+    b.major ?? appRow.major,
+    b.graduation_year ?? appRow.graduation_year,
+    b.preferred_committee_id !== undefined
+      ? b.preferred_committee_id
+        ? Number(b.preferred_committee_id)
+        : null
+      : appRow.preferred_committee_id,
+    b.skills ?? appRow.skills,
+    b.experiences ?? appRow.experiences,
+    b.reason ?? appRow.reason,
+    nextStatus,
+    committeeId || null,
+    admin_notes ?? appRow.admin_notes,
+    req.user?.email || '',
+    id
+  );
+
+  const savedApp = (db.prepare('SELECT * FROM membership_applications WHERE id = ?').get(id) as any) || appRow;
 
   let createdMember: any = null;
   let createdCard: any = null;
@@ -169,10 +205,10 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
   if (nextStatus === 'accepted') {
     const existingMember = db
       .prepare("SELECT * FROM members WHERE email = ? OR (phone = ? AND phone != '')")
-      .get(appRow.email, appRow.phone) as any;
+      .get(savedApp.email, savedApp.phone) as any;
 
     if (!existingMember) {
-      const matchedUser = db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(appRow.email) as { id: number } | undefined;
+      const matchedUser = db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(savedApp.email) as { id: number } | undefined;
       const memberNumber = generateNextMemberNumber();
       const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const mRes = db
@@ -187,22 +223,22 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
         .run(
           matchedUser?.id || null,
           memberNumber,
-          appRow.full_name,
-          appRow.avatar_url || '',
-          appRow.birth_date || '',
-          appRow.gender || '',
-          appRow.governorate || '',
-          appRow.area || '',
-          appRow.phone,
-          appRow.whatsapp || '',
-          appRow.email,
-          appRow.qualification || '',
-          appRow.university_school || '',
-          appRow.major || '',
-          appRow.graduation_year || '',
-          appRow.national_id_number || '',
-          appRow.national_id_front_url || '',
-          appRow.national_id_back_url || '',
+          savedApp.full_name,
+          savedApp.avatar_url || '',
+          savedApp.birth_date || '',
+          savedApp.gender || '',
+          savedApp.governorate || '',
+          savedApp.area || '',
+          savedApp.phone,
+          savedApp.whatsapp || '',
+          savedApp.email,
+          savedApp.qualification || '',
+          savedApp.university_school || '',
+          savedApp.major || '',
+          savedApp.graduation_year || '',
+          savedApp.national_id_number || '',
+          savedApp.national_id_front_url || '',
+          savedApp.national_id_back_url || '',
           committeeId || null,
           position_title || 'عضو عامل',
           expiresAt
@@ -214,7 +250,7 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
         db.prepare(
           `INSERT INTO committee_members (committee_id, member_id, person_name, role_title, avatar_url)
            VALUES (?, ?, ?, ?, ?)`
-        ).run(committeeId, createdMember.id, appRow.full_name, position_title || 'عضو لجنة', appRow.avatar_url || '');
+        ).run(committeeId, createdMember.id, savedApp.full_name, position_title || 'عضو لجنة', savedApp.avatar_url || '');
       }
 
       if (issue_card !== false) {
@@ -240,13 +276,13 @@ router.patch('/applications/:id', requirePermission('applications'), (req: Authe
         : 'مطلوب استكمال بيانات طلب العضوية';
   const notifMessage =
     nextStatus === 'accepted'
-      ? `تهانينا ${appRow.full_name}! تم قبول طلبك رقم ${appRow.application_number}${createdMember ? ` وإصدار رقم العضوية ${createdMember.member_number}` : ''}.`
-      : admin_notes || `حالة طلبك (${appRow.application_number}) أصبحت: ${nextStatus}`;
+      ? `تهانينا ${savedApp.full_name}! تم قبول طلبك رقم ${savedApp.application_number}${createdMember ? ` وإصدار رقم العضوية ${createdMember.member_number}` : ''}.`
+      : admin_notes || `حالة طلبك (${savedApp.application_number}) أصبحت: ${nextStatus}`;
 
   db.prepare(
     `INSERT INTO notifications (target_email, title_ar, message_ar, ref_type, ref_id)
      VALUES (?, ?, ?, 'application', ?)`
-  ).run(appRow.email, notifTitle, notifMessage, appRow.application_number);
+  ).run(savedApp.email, notifTitle, notifMessage, savedApp.application_number);
 
   logAudit(req, `application_${nextStatus}`, 'membership_application', id, {
     application_number: appRow.application_number,
@@ -375,14 +411,17 @@ router.post('/members', requirePermission('members:create'), (req: AuthedRequest
     return;
   }
   const memberNumber = (b.member_number && String(b.member_number).trim()) || generateNextMemberNumber();
-  const expiresAt = b.expires_at || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const isNoExpiry = Boolean(b.no_expiry) || String(b.position_title || '').includes('رئيس المبادرة');
+  const expiresAt = isNoExpiry
+    ? ''
+    : b.expires_at || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const info = db
     .prepare(
       `INSERT INTO members (
         member_number, full_name, full_name_en, avatar_url, birth_date, gender, governorate, area,
-        phone, whatsapp, email, qualification, university_school, major, graduation_year,
+        phone, whatsapp, email, national_id_number, qualification, university_school, major, graduation_year,
         committee_id, position_title, status, joined_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       memberNumber,
@@ -396,6 +435,7 @@ router.post('/members', requirePermission('members:create'), (req: AuthedRequest
       b.phone || '',
       b.whatsapp || '',
       b.email || '',
+      b.national_id_number || '',
       b.qualification || '',
       b.university_school || '',
       b.major || '',
@@ -426,13 +466,18 @@ router.patch('/members/:id', requirePermission('members:edit'), (req: AuthedRequ
     return;
   }
   const b = req.body;
+  const nextMemberNumber =
+    b.member_number && String(b.member_number).trim()
+      ? String(b.member_number).trim()
+      : existing.member_number;
   db.prepare(
     `UPDATE members SET
-      full_name = ?, full_name_en = ?, avatar_url = ?, birth_date = ?, gender = ?, governorate = ?, area = ?,
-      phone = ?, whatsapp = ?, email = ?, qualification = ?, university_school = ?, major = ?, graduation_year = ?,
+      member_number = ?, full_name = ?, full_name_en = ?, avatar_url = ?, birth_date = ?, gender = ?, governorate = ?, area = ?,
+      phone = ?, whatsapp = ?, email = ?, national_id_number = ?, qualification = ?, university_school = ?, major = ?, graduation_year = ?,
       committee_id = ?, position_title = ?, status = ?, renewed_at = ?, expires_at = ?
      WHERE id = ?`
   ).run(
+    nextMemberNumber,
     b.full_name ?? existing.full_name,
     b.full_name_en ?? existing.full_name_en,
     b.avatar_url ?? existing.avatar_url,
@@ -443,6 +488,7 @@ router.patch('/members/:id', requirePermission('members:edit'), (req: AuthedRequ
     b.phone ?? existing.phone,
     b.whatsapp ?? existing.whatsapp,
     b.email ?? existing.email,
+    b.national_id_number ?? existing.national_id_number,
     b.qualification ?? existing.qualification,
     b.university_school ?? existing.university_school,
     b.major ?? existing.major,
@@ -511,7 +557,7 @@ router.post('/members/:id/activate-account', requirePermission('members:edit'), 
 router.get('/cards', requirePermission('cards'), (_req: AuthedRequest, res: Response) => {
   const cards = db
     .prepare(
-      `SELECT mc.*, m.full_name, m.member_number, m.avatar_url, m.position_title, c.name_ar as committee_name
+      `SELECT mc.*, m.full_name, m.member_number, m.national_id_number, m.governorate, m.avatar_url, m.position_title, c.name_ar as committee_name
        FROM membership_cards mc
        JOIN members m ON m.id = mc.member_id
        LEFT JOIN committees c ON c.id = m.committee_id
@@ -524,7 +570,7 @@ router.get('/cards', requirePermission('cards'), (_req: AuthedRequest, res: Resp
 });
 
 router.post('/cards/issue', requirePermission('cards'), (req: AuthedRequest, res: Response) => {
-  const { member_id, design_id, expiry_date } = req.body;
+  const { member_id, design_id, expiry_date, no_expiry } = req.body;
   const member = db.prepare('SELECT * FROM members WHERE id = ?').get(Number(member_id)) as any;
   if (!member) {
     res.status(404).json({ error: 'العضو غير موجود' });
@@ -532,15 +578,126 @@ router.post('/cards/issue', requirePermission('cards'), (req: AuthedRequest, res
   }
   const cardNumber = generateSafeCode('CARD');
   const qrToken = crypto.randomBytes(12).toString('hex');
-  const exp = expiry_date || member.expires_at || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const isPresident = String(member.position_title || '').includes('رئيس المبادرة') && !String(member.position_title || '').includes('نائب');
+  const isPermanent = Boolean(no_expiry) || (expiry_date === '' && isPresident);
+  const exp = isPermanent
+    ? ''
+    : expiry_date !== undefined
+      ? String(expiry_date)
+      : member.expires_at || (isPresident ? '' : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
   const info = db
     .prepare(
       `INSERT INTO membership_cards (member_id, card_number, design_id, issue_date, expiry_date, status, qr_token, issued_by)
        VALUES (?, ?, ?, date('now'), ?, 'active', ?, ?)`
     )
     .run(member.id, cardNumber, design_id ? Number(design_id) : 1, exp, qrToken, req.user?.email || '');
-  logAudit(req, 'issue_card', 'membership_card', info.lastInsertRowid, { cardNumber, member_id });
+  logAudit(req, 'issue_card', 'membership_card', info.lastInsertRowid, { cardNumber, member_id, no_expiry: isPermanent });
   res.json(db.prepare('SELECT * FROM membership_cards WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.post('/cards/issue-leadership', requirePermission('cards'), (req: AuthedRequest, res: Response) => {
+  const b = req.body;
+  const fullName = String(b.full_name || '').trim();
+  if (!fullName) {
+    res.status(400).json({ error: 'الاسم الكامل مطلوب لإصدار الكارنيه القيادي' });
+    return;
+  }
+
+  const positionTitle = String(b.position_title || 'رئيس المبادرة').trim();
+  const isPresidentRole = positionTitle.includes('رئيس المبادرة') && !positionTitle.includes('نائب');
+  const isNoExpiry = b.no_expiry !== undefined ? Boolean(b.no_expiry) : isPresidentRole;
+  const expiryDate = isNoExpiry
+    ? ''
+    : String(b.expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+
+  const nationalId = String(b.national_id_number || '')
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/\D/g, '');
+  const email = String(b.email || '').trim().toLowerCase();
+  const phone = String(b.phone || '').trim();
+
+  let member =
+    (nationalId ? (db.prepare('SELECT * FROM members WHERE national_id_number = ? LIMIT 1').get(nationalId) as any) : null) ||
+    (email ? (db.prepare('SELECT * FROM members WHERE lower(email) = lower(?) LIMIT 1').get(email) as any) : null) ||
+    (db.prepare('SELECT * FROM members WHERE trim(full_name) = ? LIMIT 1').get(fullName) as any);
+
+  if (!member) {
+    const memberNumber = (b.member_number && String(b.member_number).trim()) || generateNextMemberNumber();
+    const mRes = db
+      .prepare(
+        `INSERT INTO members (
+          member_number, full_name, avatar_url, governorate, phone, email, national_id_number,
+          committee_id, position_title, status, joined_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', date('now'), ?)`
+      )
+      .run(
+        memberNumber,
+        fullName,
+        b.avatar_url || '',
+        b.governorate || '',
+        phone,
+        email,
+        nationalId,
+        b.committee_id ? Number(b.committee_id) : null,
+        positionTitle,
+        expiryDate
+      );
+    member = db.prepare('SELECT * FROM members WHERE id = ?').get(mRes.lastInsertRowid);
+  } else {
+    db.prepare(
+      `UPDATE members SET
+        full_name = ?,
+        avatar_url = COALESCE(NULLIF(?, ''), avatar_url),
+        governorate = COALESCE(NULLIF(?, ''), governorate),
+        phone = COALESCE(NULLIF(?, ''), phone),
+        email = COALESCE(NULLIF(?, ''), email),
+        national_id_number = COALESCE(NULLIF(?, ''), national_id_number),
+        position_title = ?,
+        status = 'active',
+        expires_at = ?
+       WHERE id = ?`
+    ).run(
+      fullName,
+      b.avatar_url || '',
+      b.governorate || '',
+      phone,
+      email,
+      nationalId,
+      positionTitle,
+      expiryDate,
+      member.id
+    );
+    member = db.prepare('SELECT * FROM members WHERE id = ?').get(member.id);
+  }
+
+  const cardNumber = generateSafeCode('CARD');
+  const qrToken = crypto.randomBytes(12).toString('hex');
+  const designId = b.design_id ? Number(b.design_id) : 1;
+  const cRes = db
+    .prepare(
+      `INSERT INTO membership_cards (member_id, card_number, design_id, issue_date, expiry_date, status, qr_token, issued_by)
+       VALUES (?, ?, ?, date('now'), ?, 'active', ?, ?)`
+    )
+    .run(member.id, cardNumber, designId, expiryDate, qrToken, req.user?.email || '');
+
+  const card = db
+    .prepare(
+      `SELECT mc.*, m.full_name, m.member_number, m.national_id_number, m.governorate, m.avatar_url, m.position_title, c.name_ar as committee_name
+       FROM membership_cards mc
+       JOIN members m ON m.id = mc.member_id
+       LEFT JOIN committees c ON c.id = m.committee_id
+       WHERE mc.id = ?`
+    )
+    .get(cRes.lastInsertRowid);
+
+  logAudit(req, 'issue_leadership_card', 'membership_card', cRes.lastInsertRowid, {
+    cardNumber,
+    fullName,
+    positionTitle,
+    no_expiry: isNoExpiry
+  });
+
+  res.status(201).json({ card, member });
 });
 
 router.patch('/cards/:id', requirePermission('cards'), (req: AuthedRequest, res: Response) => {
@@ -550,15 +707,56 @@ router.patch('/cards/:id', requirePermission('cards'), (req: AuthedRequest, res:
     res.status(404).json({ error: 'الكارنيه غير موجود' });
     return;
   }
-  const { status, expiry_date, design_id } = req.body;
-  db.prepare('UPDATE membership_cards SET status = ?, expiry_date = ?, design_id = ? WHERE id = ?').run(
+  const b = req.body;
+  const { status, expiry_date, issue_date, card_number, design_id } = b;
+  db.prepare(
+    'UPDATE membership_cards SET card_number = ?, issue_date = ?, status = ?, expiry_date = ?, design_id = ? WHERE id = ?'
+  ).run(
+    card_number !== undefined && String(card_number).trim() ? String(card_number).trim() : existing.card_number,
+    issue_date !== undefined && String(issue_date).trim() ? String(issue_date).trim() : existing.issue_date,
     status ?? existing.status,
-    expiry_date ?? existing.expiry_date,
+    expiry_date !== undefined ? String(expiry_date) : existing.expiry_date,
     design_id !== undefined ? Number(design_id) : existing.design_id,
     id
   );
-  logAudit(req, 'update', 'membership_card', id, { status, expiry_date });
-  res.json(db.prepare('SELECT * FROM membership_cards WHERE id = ?').get(id));
+
+  // Also allow updating cardholder member profile fields directly when edited from the Cards section
+  if (
+    existing.member_id &&
+    (b.full_name !== undefined ||
+      b.position_title !== undefined ||
+      b.national_id_number !== undefined ||
+      b.governorate !== undefined ||
+      b.committee_id !== undefined ||
+      b.avatar_url !== undefined)
+  ) {
+    const memberRow = db.prepare('SELECT * FROM members WHERE id = ?').get(existing.member_id) as any;
+    if (memberRow) {
+      db.prepare(
+        `UPDATE members SET full_name = ?, position_title = ?, national_id_number = ?, governorate = ?, committee_id = ?, avatar_url = ? WHERE id = ?`
+      ).run(
+        b.full_name !== undefined ? String(b.full_name).trim() : memberRow.full_name,
+        b.position_title !== undefined ? String(b.position_title).trim() : memberRow.position_title,
+        b.national_id_number !== undefined ? String(b.national_id_number).trim() : memberRow.national_id_number,
+        b.governorate !== undefined ? String(b.governorate).trim() : memberRow.governorate,
+        b.committee_id !== undefined ? (b.committee_id ? Number(b.committee_id) : null) : memberRow.committee_id,
+        b.avatar_url !== undefined ? String(b.avatar_url) : memberRow.avatar_url,
+        memberRow.id
+      );
+    }
+  }
+
+  logAudit(req, 'update', 'membership_card', id, { status, expiry_date, card_number });
+  const updated = db
+    .prepare(
+      `SELECT mc.*, m.full_name, m.member_number, m.national_id_number, m.governorate, m.avatar_url, m.position_title, m.committee_id, c.name_ar as committee_name
+       FROM membership_cards mc
+       JOIN members m ON m.id = mc.member_id
+       LEFT JOIN committees c ON c.id = m.committee_id
+       WHERE mc.id = ?`
+    )
+    .get(id);
+  res.json(updated);
 });
 
 router.delete('/cards/:id', requirePermission('cards'), (req: AuthedRequest, res: Response) => {
@@ -589,7 +787,9 @@ router.patch('/card-designs/:id', requirePermission('cards'), (req: AuthedReques
       orientation = ?, show_expiry = ?, footer_note_ar = ?,
       header_title_ar = ?, header_title_en = ?, header_subtitle_ar = ?, card_badge_ar = ?,
       side_slogan_ar = ?, verify_badge_ar = ?, vp_title_ar = ?, vp_names_ar = ?,
-      president_title_ar = ?, president_name_ar = ?, back_title_ar = ?, back_slogan_ar = ?,
+      president_title_ar = ?, president_name_ar = ?, president_signature_url = ?, president_signature_text = ?,
+      stamp_url = ?, show_stamp = ?, stamp_position = ?, whatsapp_number = ?,
+      back_title_ar = ?, back_slogan_ar = ?,
       extra_rows_json = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
@@ -612,6 +812,12 @@ router.patch('/card-designs/:id', requirePermission('cards'), (req: AuthedReques
     b.vp_names_ar ?? existing.vp_names_ar ?? 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح',
     b.president_title_ar ?? existing.president_title_ar ?? 'رئيس المبادرة',
     b.president_name_ar ?? existing.president_name_ar ?? 'أ. معاذ الشرقاوي',
+    b.president_signature_url ?? existing.president_signature_url ?? '',
+    b.president_signature_text ?? existing.president_signature_text ?? '',
+    b.stamp_url !== undefined ? b.stamp_url : existing.stamp_url ?? '/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png',
+    b.show_stamp !== undefined ? (b.show_stamp ? 1 : 0) : existing.show_stamp ?? 0,
+    b.stamp_position ?? existing.stamp_position ?? 'over_signature',
+    b.whatsapp_number !== undefined ? String(b.whatsapp_number) : existing.whatsapp_number ?? '01277714301',
     b.back_title_ar ?? existing.back_title_ar ?? 'شركاء النجاح والشراكات المؤسسية',
     b.back_slogan_ar ?? existing.back_slogan_ar ?? 'معاً ... نبني مجتمعاً رقمياً آمناً',
     extraRowsJson,
@@ -702,8 +908,8 @@ router.post('/leadership', requirePermission('leadership'), (req: AuthedRequest,
   const b = req.body;
   const info = db
     .prepare(
-      `INSERT INTO leadership (name_ar, name_en, role_ar, role_en, tier, committee_id, avatar_url, bio_ar, bio_en, joined_at, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO leadership (name_ar, name_en, role_ar, role_en, tier, committee_id, governorate, avatar_url, bio_ar, bio_en, joined_at, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.name_ar,
@@ -712,6 +918,7 @@ router.post('/leadership', requirePermission('leadership'), (req: AuthedRequest,
       b.role_en || '',
       b.tier || 'board',
       b.committee_id ? Number(b.committee_id) : null,
+      b.governorate || '',
       b.avatar_url || '',
       b.bio_ar || '',
       b.bio_en || '',
@@ -720,6 +927,7 @@ router.post('/leadership', requirePermission('leadership'), (req: AuthedRequest,
       b.is_active !== false ? 1 : 0
     );
   logAudit(req, 'create', 'leadership', info.lastInsertRowid, { name_ar: b.name_ar });
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM leadership WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -732,7 +940,7 @@ router.patch('/leadership/:id', requirePermission('leadership'), (req: AuthedReq
   }
   const b = req.body;
   db.prepare(
-    `UPDATE leadership SET name_ar = ?, name_en = ?, role_ar = ?, role_en = ?, tier = ?, committee_id = ?,
+    `UPDATE leadership SET name_ar = ?, name_en = ?, role_ar = ?, role_en = ?, tier = ?, committee_id = ?, governorate = ?,
       avatar_url = ?, bio_ar = ?, bio_en = ?, joined_at = ?, sort_order = ?, is_active = ? WHERE id = ?`
   ).run(
     b.name_ar ?? existing.name_ar,
@@ -741,6 +949,7 @@ router.patch('/leadership/:id', requirePermission('leadership'), (req: AuthedReq
     b.role_en ?? existing.role_en,
     b.tier ?? existing.tier,
     b.committee_id !== undefined ? (b.committee_id ? Number(b.committee_id) : null) : existing.committee_id,
+    b.governorate ?? existing.governorate ?? '',
     b.avatar_url ?? existing.avatar_url,
     b.bio_ar ?? existing.bio_ar,
     b.bio_en ?? existing.bio_en,
@@ -750,6 +959,7 @@ router.patch('/leadership/:id', requirePermission('leadership'), (req: AuthedReq
     id
   );
   logAudit(req, 'update', 'leadership', id);
+  syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM leadership WHERE id = ?').get(id));
 });
 
@@ -757,6 +967,7 @@ router.delete('/leadership/:id', requirePermission('leadership'), (req: AuthedRe
   const id = Number(req.params.id);
   db.prepare('DELETE FROM leadership WHERE id = ?').run(id);
   logAudit(req, 'delete', 'leadership', id);
+  syncPublicSeoFiles();
   res.json({ success: true });
 });
 
@@ -772,8 +983,8 @@ router.post('/committees', requirePermission('committees'), (req: AuthedRequest,
   const slug = b.slug || `committee-${Date.now()}`;
   const info = db
     .prepare(
-      `INSERT INTO committees (slug, name_ar, name_en, logo_url, description_ar, description_en, tasks_ar, head_name, head_title, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO committees (slug, name_ar, name_en, logo_url, description_ar, description_en, tasks_ar, head_name, head_title, deputy_head_name, coordinator_name, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       slug,
@@ -785,6 +996,8 @@ router.post('/committees', requirePermission('committees'), (req: AuthedRequest,
       Array.isArray(b.tasks_ar) ? JSON.stringify(b.tasks_ar) : b.tasks_ar || '[]',
       b.head_name || '',
       b.head_title || 'رئيس اللجنة',
+      b.deputy_head_name || '',
+      b.coordinator_name || '',
       Number(b.sort_order ?? 10),
       b.is_active !== false ? 1 : 0
     );
@@ -803,7 +1016,7 @@ router.patch('/committees/:id', requirePermission('committees'), (req: AuthedReq
   const b = req.body;
   db.prepare(
     `UPDATE committees SET name_ar = ?, name_en = ?, logo_url = ?, description_ar = ?, description_en = ?,
-      tasks_ar = ?, head_name = ?, head_title = ?, sort_order = ?, is_active = ? WHERE id = ?`
+      tasks_ar = ?, head_name = ?, head_title = ?, deputy_head_name = ?, coordinator_name = ?, sort_order = ?, is_active = ? WHERE id = ?`
   ).run(
     b.name_ar ?? existing.name_ar,
     b.name_en ?? existing.name_en,
@@ -813,6 +1026,8 @@ router.patch('/committees/:id', requirePermission('committees'), (req: AuthedReq
     b.tasks_ar !== undefined ? (Array.isArray(b.tasks_ar) ? JSON.stringify(b.tasks_ar) : b.tasks_ar) : existing.tasks_ar,
     b.head_name ?? existing.head_name,
     b.head_title ?? existing.head_title,
+    b.deputy_head_name ?? existing.deputy_head_name ?? '',
+    b.coordinator_name ?? existing.coordinator_name ?? '',
     b.sort_order !== undefined ? Number(b.sort_order) : existing.sort_order,
     b.is_active !== undefined ? (b.is_active ? 1 : 0) : existing.is_active,
     id
@@ -855,17 +1070,24 @@ router.patch('/committee-members/:cmId', requirePermission('committees'), (req: 
   }
   const b = req.body;
   const nextCommitteeId = b.committee_id ? Number(b.committee_id) : existing.committee_id;
-  db.prepare('UPDATE committee_members SET committee_id = ?, role_title = ?, is_head = ? WHERE id = ?').run(
+  const nextName = b.person_name !== undefined ? String(b.person_name).trim() : existing.person_name;
+  const nextRole = b.role_title !== undefined ? String(b.role_title).trim() : existing.role_title;
+  const nextIsHead = b.is_head !== undefined ? (b.is_head ? 1 : 0) : existing.is_head;
+  db.prepare('UPDATE committee_members SET committee_id = ?, person_name = ?, role_title = ?, is_head = ? WHERE id = ?').run(
     nextCommitteeId,
-    b.role_title ?? existing.role_title,
-    b.is_head !== undefined ? (b.is_head ? 1 : 0) : existing.is_head,
+    nextName,
+    nextRole,
+    nextIsHead,
     cmId
   );
-  if (existing.member_id && b.committee_id) {
-    db.prepare('UPDATE members SET committee_id = ?, position_title = ? WHERE id = ?').run(nextCommitteeId, b.role_title ?? existing.role_title, existing.member_id);
+  if (nextIsHead) {
+    db.prepare('UPDATE committees SET head_name = ?, head_title = ? WHERE id = ?').run(nextName, nextRole || 'رئيس اللجنة', nextCommitteeId);
+  }
+  if (existing.member_id && (b.committee_id || b.role_title)) {
+    db.prepare('UPDATE members SET committee_id = ?, position_title = ? WHERE id = ?').run(nextCommitteeId, nextRole, existing.member_id);
   }
   logAudit(req, 'update', 'committee_member', cmId, b);
-  res.json({ success: true });
+  res.json(db.prepare('SELECT * FROM committee_members WHERE id = ?').get(cmId));
 });
 
 router.delete('/committee-members/:cmId', requirePermission('committees'), (req: AuthedRequest, res: Response) => {
@@ -1242,8 +1464,18 @@ router.get('/partners', requirePermission('partners'), (_req: AuthedRequest, res
   res.json(db.prepare('SELECT * FROM partners ORDER BY marquee_order ASC, id ASC').all());
 });
 
+function normalizePartnerWebsiteUrl(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s || s === '/' || s === '#') return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith('//')) return `https:${s}`;
+  if (s.includes('.') && !s.startsWith('/')) return `https://${s}`;
+  return s;
+}
+
 router.post('/partners', requirePermission('partners'), (req: AuthedRequest, res: Response) => {
   const b = req.body;
+  const cleanUrl = normalizePartnerWebsiteUrl(b.website_url);
   const info = db
     .prepare(
       `INSERT INTO partners (name_ar, name_en, partner_type, description_ar, description_en, logo_url, website_url, show_in_marquee, marquee_order, is_visible)
@@ -1256,7 +1488,7 @@ router.post('/partners', requirePermission('partners'), (req: AuthedRequest, res
       b.description_ar || '',
       b.description_en || '',
       b.logo_url,
-      b.website_url || '',
+      cleanUrl,
       b.show_in_marquee !== false ? 1 : 0,
       Number(b.marquee_order ?? 10),
       b.is_visible !== false ? 1 : 0
@@ -1267,7 +1499,7 @@ router.post('/partners', requirePermission('partners'), (req: AuthedRequest, res
     b.logo_url,
     Number(b.marquee_order ?? 10)
   );
-  logAudit(req, 'create', 'partner', info.lastInsertRowid, { name_ar: b.name_ar });
+  logAudit(req, 'create', 'partner', info.lastInsertRowid, { name_ar: b.name_ar, website_url: cleanUrl });
   syncPublicSeoFiles();
   res.json(db.prepare('SELECT * FROM partners WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -1280,20 +1512,31 @@ router.patch('/partners/:id', requirePermission('partners'), (req: AuthedRequest
     return;
   }
   const b = req.body;
+  const nextWebsiteUrl = b.website_url !== undefined ? normalizePartnerWebsiteUrl(b.website_url) : existing.website_url;
+  const nextNameAr = b.name_ar ?? existing.name_ar;
+  const nextLogoUrl = b.logo_url ?? existing.logo_url;
+  const nextOrder = b.marquee_order !== undefined ? Number(b.marquee_order) : existing.marquee_order;
+
   db.prepare(
     `UPDATE partners SET name_ar = ?, name_en = ?, partner_type = ?, description_ar = ?, description_en = ?,
       logo_url = ?, website_url = ?, show_in_marquee = ?, marquee_order = ?, is_visible = ? WHERE id = ?`
   ).run(
-    b.name_ar ?? existing.name_ar,
+    nextNameAr,
     b.name_en ?? existing.name_en,
     b.partner_type ?? existing.partner_type,
     b.description_ar ?? existing.description_ar,
     b.description_en ?? existing.description_en,
-    b.logo_url ?? existing.logo_url,
-    b.website_url ?? existing.website_url,
+    nextLogoUrl,
+    nextWebsiteUrl,
     b.show_in_marquee !== undefined ? (b.show_in_marquee ? 1 : 0) : existing.show_in_marquee,
-    b.marquee_order !== undefined ? Number(b.marquee_order) : existing.marquee_order,
+    nextOrder,
     b.is_visible !== undefined ? (b.is_visible ? 1 : 0) : existing.is_visible,
+    id
+  );
+  db.prepare('UPDATE partner_logos SET label = ?, logo_url = ?, sort_order = ? WHERE partner_id = ?').run(
+    nextNameAr,
+    nextLogoUrl,
+    nextOrder,
     id
   );
   logAudit(req, 'update', 'partner', id, b);
@@ -1343,6 +1586,26 @@ router.post('/albums', requirePermission('media'), (req: AuthedRequest, res: Res
     .run(b.title_ar, b.title_en || '', b.category || 'events', b.description_ar || '', b.cover_image || '');
   logAudit(req, 'create', 'album', info.lastInsertRowid);
   res.json(db.prepare('SELECT * FROM albums WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.patch('/albums/:id', requirePermission('media'), (req: AuthedRequest, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM albums WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'الألبوم غير موجود' });
+    return;
+  }
+  const b = req.body;
+  db.prepare('UPDATE albums SET title_ar = ?, title_en = ?, category = ?, description_ar = ?, cover_image = ? WHERE id = ?').run(
+    b.title_ar ?? existing.title_ar,
+    b.title_en ?? existing.title_en,
+    b.category ?? existing.category,
+    b.description_ar ?? existing.description_ar,
+    b.cover_image ?? existing.cover_image,
+    id
+  );
+  logAudit(req, 'update', 'album', id);
+  res.json(db.prepare('SELECT * FROM albums WHERE id = ?').get(id));
 });
 
 router.delete('/albums/:id', requirePermission('media'), (req: AuthedRequest, res: Response) => {
@@ -1628,9 +1891,22 @@ router.post('/certificates', requirePermission('certificates'), (req: AuthedRequ
 
 router.patch('/certificates/:id', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
   const id = Number(req.params.id);
-  db.prepare('UPDATE certificates SET status = ?, template_style = ? WHERE id = ?').run(
-    req.body.status || 'valid',
-    req.body.template_style || 'official_navy',
+  const existing = db.prepare('SELECT * FROM certificates WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'الشهادة غير موجودة' });
+    return;
+  }
+  const b = req.body;
+  db.prepare(
+    `UPDATE certificates SET recipient_name = ?, recipient_email = ?, course_title = ?, issue_date = ?, trainer_name = ?, status = ?, template_style = ? WHERE id = ?`
+  ).run(
+    b.recipient_name ?? existing.recipient_name,
+    b.recipient_email ?? existing.recipient_email,
+    b.course_title ?? existing.course_title,
+    b.issue_date ?? existing.issue_date,
+    b.trainer_name ?? existing.trainer_name,
+    b.status ?? existing.status,
+    b.template_style ?? existing.template_style,
     id
   );
   logAudit(req, 'update', 'certificate', id, req.body);
@@ -1717,6 +1993,13 @@ router.patch('/contacts/:id', requirePermission('contacts'), (req: AuthedRequest
   const id = Number(req.params.id);
   db.prepare('UPDATE contact_messages SET status = ? WHERE id = ?').run(req.body.status || 'replied', id);
   logAudit(req, 'update', 'contact_message', id, { status: req.body.status });
+  res.json({ success: true });
+});
+
+router.delete('/contacts/:id', requirePermission('contacts'), (req: AuthedRequest, res: Response) => {
+  const id = Number(req.params.id);
+  db.prepare('DELETE FROM contact_messages WHERE id = ?').run(id);
+  logAudit(req, 'delete', 'contact_message', id);
   res.json({ success: true });
 });
 
@@ -1835,13 +2118,25 @@ router.post('/admins', requirePermission('admins:create'), (req: AuthedRequest, 
 router.patch('/admins/:userId', requirePermission('admins:edit'), (req: AuthedRequest, res: Response) => {
   const userId = Number(req.params.userId);
   const targetAdmin = db.prepare('SELECT role FROM admins WHERE user_id = ?').get(userId) as { role: string } | undefined;
-  const { admin_role, status, title_ar, password, name } = req.body;
+  const { admin_role, status, title_ar, password, name, email } = req.body;
   if ((targetAdmin?.role === 'super_admin' || admin_role === 'super_admin') && req.user?.adminRole !== 'super_admin') {
     res.status(403).json({ error: 'تعديل حساب المدير العام مقتصر على المدير العام فقط' });
     return;
   }
   if (name) {
     db.prepare('UPDATE users SET name = ? WHERE id = ?').run(String(name).trim(), userId);
+  }
+  if (email && String(email).trim()) {
+    const cleanEmail = String(email).trim().toLowerCase();
+    const conflict = db.prepare('SELECT id FROM users WHERE lower(email) = lower(?) AND id != ?').get(cleanEmail, userId);
+    if (conflict) {
+      res.status(400).json({ error: 'البريد الإلكتروني مستخدم لحساب آخر بالفعل' });
+      return;
+    }
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(cleanEmail, userId);
+  }
+  if (title_ar !== undefined) {
+    db.prepare('UPDATE admins SET title_ar = ? WHERE user_id = ?').run(String(title_ar).trim(), userId);
   }
   if (admin_role && ROLE_PERMISSIONS[admin_role]) {
     let nextPerms = ROLE_PERMISSIONS[admin_role];
@@ -1862,7 +2157,7 @@ router.patch('/admins/:userId', requirePermission('admins:edit'), (req: AuthedRe
   if (password && String(password).length >= 8) {
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(String(password), 12), userId);
   }
-  logAudit(req, 'update_admin', 'admin', userId, { admin_role, status });
+  logAudit(req, 'update_admin', 'admin', userId, { admin_role, status, email });
   res.json({ success: true });
 });
 

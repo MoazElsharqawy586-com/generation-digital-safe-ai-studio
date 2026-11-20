@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Calendar, CheckCircle2, Clock, GraduationCap, MapPin, Users, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
+import { OFFICIAL_SITE_ORIGIN, trackEvent, trackPageView } from '../lib/analytics';
 import type { EventItem, ProjectItem, TrainingItem } from '../types';
 
 function normalizeMediaGallery(raw?: string): { url: string; alt: string; caption: string }[] {
@@ -45,7 +46,9 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
             const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
             const pageTitle = `${ev.title_ar} | ${siteTitle}`;
             const pageDesc = (ev.description_ar || settings.seo_description || ev.title_ar).replace(/\s+/g, ' ').trim().slice(0, 165);
-            const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+            const rawSiteUrl = (settings.site_url || '').trim().replace(/\/+$/, '');
+            const isInternal = /(localhost|127\.0\.0\.1|ais-dev-|ais-pre-)/i.test(rawSiteUrl);
+            const canonicalOrigin = rawSiteUrl && !isInternal ? rawSiteUrl : OFFICIAL_SITE_ORIGIN;
             const canonicalUrl = `${canonicalOrigin}/events/${ev.id}`;
             document.title = pageTitle;
             const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
@@ -54,8 +57,13 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
             const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${canonicalOrigin}${rawImg.startsWith('/') ? rawImg : `/${rawImg}`}`) : '';
             const updateMeta = (attr: 'name' | 'property', key: string, content: string) => {
               if (!content) return;
-              const el = document.querySelector(`meta[${attr}="${key}"]`);
-              if (el) el.setAttribute('content', content);
+              let el = document.querySelector(`meta[${attr}="${key}"]`);
+              if (!el) {
+                el = document.createElement('meta');
+                el.setAttribute(attr, key);
+                document.head.appendChild(el);
+              }
+              el.setAttribute('content', content);
             };
             updateMeta('name', 'description', pageDesc);
             updateMeta('name', 'robots', 'index, follow');
@@ -66,8 +74,11 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
             updateMeta('name', 'twitter:description', pageDesc);
             if (fullImg) {
               updateMeta('property', 'og:image', fullImg);
+              updateMeta('property', 'og:image:secure_url', fullImg);
               updateMeta('name', 'twitter:image', fullImg);
             }
+            trackPageView(`/events/${ev.id}`, pageTitle);
+            trackEvent('event_view', { event_id: ev.id, event_type: ev.event_type || '' });
           }
         })
         .finally(() => setLoadingSingle(false));
@@ -95,6 +106,7 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
     });
     const data = await res.json();
     if (res.ok) {
+      trackEvent('event_register', { event_id: selectedEvent.id, source: 'events' });
       setMsg(data.message);
       setForm({ full_name: '', email: '', phone: '', governorate: '', notes: '' });
     } else {
@@ -386,6 +398,7 @@ export const TrainingsPage: React.FC = () => {
     });
     const data = await res.json();
     if (res.ok) {
+      trackEvent('training_enroll', { training_id: selected.id, track: selected.track });
       setMsg(data.message);
       setTrainings((prev) => prev.map((x) => (x.id === selected.id ? { ...x, seats_taken: x.seats_taken + 1 } : x)));
       setForm({ full_name: '', email: '', phone: '', governorate: '', member_number: '' });

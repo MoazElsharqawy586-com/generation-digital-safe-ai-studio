@@ -1,15 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Upload, Users, X } from 'lucide-react';
+import { Edit3, Plus, Save, Trash2, Upload, Users, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { uploadAdminFile } from './adminHelpers';
 import { apiFetch } from '../../lib/authFetch';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
+
+const LEADERSHIP_TIER_LABELS: Record<string, string> = {
+  president: 'رئيس المبادرة',
+  vice_president: 'نائب رئيس المبادرة',
+  board: 'عضو مجلس إدارة',
+  governorate_coordinator: 'منسق عام محافظة',
+  deputy_governorate_coordinator: 'نائب منسق عام محافظة',
+  committee_coordinator: 'منسق عام لجنة',
+  committee_head: 'رئيس لجنة',
+  deputy_committee_head: 'نائب رئيس لجنة',
+  committee_member: 'عضو لجنة'
+};
 
 export const AdminLeadershipTab: React.FC = () => {
-  const { committees } = useApp();
+  const { committees, refreshBootstrap } = useApp();
   const [items, setItems] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name_ar: '', name_en: '', role_ar: '', role_en: '', tier: 'board', committee_id: '', avatar_url: '', bio_ar: '', joined_at: '', sort_order: 0 });
+  const [notice, setNotice] = useState('');
+  const [form, setForm] = useState({ name_ar: '', name_en: '', role_ar: '', role_en: '', tier: 'board', committee_id: '', governorate: '', avatar_url: '', bio_ar: '', joined_at: '', sort_order: 0, is_active: true });
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   const load = () => apiFetch('/api/admin/leadership').then((r) => r.json()).then((d) => setItems(Array.isArray(d) ? d : []));
   useEffect(() => { load(); }, []);
@@ -19,18 +38,30 @@ export const AdminLeadershipTab: React.FC = () => {
     const url = editing ? `/api/admin/leadership/${editing.id}` : '/api/admin/leadership';
     await apiFetch(url, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
     setModal(false);
-    load();
+    await load();
+    await refreshBootstrap();
+    flash(editing ? 'تم حفظ تعديلات القيادي بنجاح ✓' : 'تمت إضافة وحفظ القيادي بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="قيادات المبادرة"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          await refreshBootstrap();
+          flash('تم حفظ ومزامنة قائمة القيادات بنجاح ✓');
+        }}
+      />
+
       <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl p-4">
         <h3 className="font-bold text-slate-900">إدارة قيادات المبادرة ({items.length})</h3>
         <button
           type="button"
           onClick={() => {
             setEditing(null);
-            setForm({ name_ar: '', name_en: '', role_ar: '', role_en: '', tier: 'board', committee_id: '', avatar_url: '', bio_ar: '', joined_at: '', sort_order: 0 });
+            setForm({ name_ar: '', name_en: '', role_ar: '', role_en: '', tier: 'board', committee_id: '', governorate: '', avatar_url: '', bio_ar: '', joined_at: '', sort_order: items.length + 1, is_active: true });
             setModal(true);
           }}
           className="px-3.5 py-2 text-xs font-semibold bg-blue-700 text-white rounded-lg inline-flex items-center gap-1"
@@ -47,7 +78,10 @@ export const AdminLeadershipTab: React.FC = () => {
               <div className="min-w-0">
                 <p className="font-bold text-slate-900 truncate">{l.name_ar}</p>
                 <p className="text-blue-700 truncate">{l.role_ar}</p>
-                <p className="text-slate-400">{l.tier}</p>
+                <p className="text-slate-400 truncate">
+                  {LEADERSHIP_TIER_LABELS[l.tier] || l.tier}
+                  {l.governorate ? ` · ${l.governorate}` : ''}
+                </p>
               </div>
             </div>
             <div className="flex flex-col gap-1 shrink-0">
@@ -55,14 +89,31 @@ export const AdminLeadershipTab: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setEditing(l);
-                  setForm({ ...l, committee_id: String(l.committee_id || '') });
+                  setForm({
+                    ...l,
+                    name_en: l.name_en || '',
+                    role_en: l.role_en || '',
+                    committee_id: String(l.committee_id || ''),
+                    governorate: l.governorate || '',
+                    sort_order: Number(l.sort_order ?? 0),
+                    is_active: l.is_active !== 0
+                  });
                   setModal(true);
                 }}
                 className="text-blue-700 font-semibold hover:underline"
               >
                 تعديل
               </button>
-              <button type="button" onClick={async () => { await apiFetch(`/api/admin/leadership/${l.id}`, { method: 'DELETE' }); load(); }} className="text-red-600 hover:underline">
+              <button
+                type="button"
+                onClick={async () => {
+                  await apiFetch(`/api/admin/leadership/${l.id}`, { method: 'DELETE' });
+                  await load();
+                  await refreshBootstrap();
+                  flash('تم حذف القيادي بنجاح ✓');
+                }}
+                className="text-red-600 hover:underline"
+              >
                 حذف
               </button>
             </div>
@@ -72,37 +123,55 @@ export const AdminLeadershipTab: React.FC = () => {
 
       {modal && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold">{editing ? 'تعديل قيادي' : 'إضافة قيادي جديد'}</h3>
+              <h3 className="font-bold">{editing ? 'تعديل بيانات القيادي' : 'إضافة قيادي جديد'}</h3>
               <button type="button" onClick={() => setModal(false)}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={save} className="space-y-3 text-xs">
-              <input required placeholder="الاسم بالعربية" value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
-              <input required placeholder="المنصب (مثال: رئيس المبادرة / رئيس لجنة...)" value={form.role_ar} onChange={(e) => setForm({ ...form, role_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
-              <div className="grid grid-cols-2 gap-3">
-                <select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input required placeholder="الاسم بالعربية *" value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="الاسم بالإنجليزية (اختياري)" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input required placeholder="المنصب بالعربية *" value={form.role_ar} onChange={(e) => setForm({ ...form, role_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="المنصب بالإنجليزية (اختياري)" value={form.role_en} onChange={(e) => setForm({ ...form, role_en: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
                   <option value="president">رئيس المبادرة</option>
                   <option value="vice_president">نائب رئيس المبادرة</option>
                   <option value="board">عضو مجلس إدارة</option>
+                  <option value="governorate_coordinator">منسق عام محافظة</option>
+                  <option value="deputy_governorate_coordinator">نائب منسق عام محافظة</option>
+                  <option value="committee_coordinator">منسق عام لجنة</option>
                   <option value="committee_head">رئيس لجنة</option>
+                  <option value="deputy_committee_head">نائب رئيس لجنة</option>
                   <option value="committee_member">عضو لجنة</option>
                 </select>
-                <select value={form.committee_id} onChange={(e) => setForm({ ...form, committee_id: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
+                <input placeholder="المحافظة (مثال: القاهرة)" value={form.governorate} onChange={(e) => setForm({ ...form, governorate: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <select value={form.committee_id} onChange={(e) => setForm({ ...form, committee_id: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
                   <option value="">-- بدون لجنة محددة --</option>
                   {committees.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}
                 </select>
               </div>
               <textarea rows={2} placeholder="نبذة مختصرة" value={form.bio_ar} onChange={(e) => setForm({ ...form, bio_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3 items-center">
                 <input type="date" value={form.joined_at} onChange={(e) => setForm({ ...form, joined_at: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                <label className="flex items-center justify-center gap-1.5 border border-dashed border-slate-300 rounded-lg cursor-pointer py-2">
-                  <Upload className="w-3.5 h-3.5 text-blue-700" />
-                  <span>{form.avatar_url ? 'تم رفع الصورة ✓' : 'رفع الصورة الشخصية'}</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, avatar_url: await uploadAdminFile(f, 'avatars') }); }} />
+                <input type="number" placeholder="الترتيب" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                <label className="flex items-center gap-1.5 font-semibold text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+                  <span>ظاهر بالموقع</span>
                 </label>
               </div>
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">حفظ</button>
+              <label className="flex items-center justify-center gap-1.5 border border-dashed border-slate-300 rounded-lg cursor-pointer py-2">
+                <Upload className="w-3.5 h-3.5 text-blue-700" />
+                <span>{form.avatar_url ? 'تم رفع الصورة ✓' : 'رفع الصورة الشخصية'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, avatar_url: await uploadAdminFile(f, 'avatars') }); }} />
+              </label>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ بيانات القيادي
+              </button>
             </form>
           </div>
         </div>
@@ -116,8 +185,14 @@ export const AdminCommitteesTab: React.FC = () => {
   const [committees, setCommittees] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name_ar: '', name_en: '', slug: '', description_ar: '', head_name: '', tasksText: '', logo_url: '' });
-  const [memberAdd, setMemberAdd] = useState<{ committeeId: number; person_name: string; role_title: string; is_head: boolean } | null>(null);
+  const [notice, setNotice] = useState('');
+  const [form, setForm] = useState({ name_ar: '', name_en: '', slug: '', description_ar: '', head_name: '', deputy_head_name: '', coordinator_name: '', tasksText: '', logo_url: '', sort_order: 10, is_active: true });
+  const [memberAdd, setMemberAdd] = useState<{ id?: number; committeeId: number; person_name: string; role_title: string; is_head: boolean } | null>(null);
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   const load = () => apiFetch('/api/admin/committees').then((r) => r.json()).then((d) => setCommittees(Array.isArray(d) ? d : []));
   useEffect(() => { load(); }, []);
@@ -131,20 +206,36 @@ export const AdminCommitteesTab: React.FC = () => {
     const url = editing ? `/api/admin/committees/${editing.id}` : '/api/admin/committees';
     await apiFetch(url, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     setModal(false);
-    load();
-    refreshBootstrap();
+    await load();
+    await refreshBootstrap();
+    flash(editing ? 'تم حفظ تعديلات اللجنة بنجاح ✓' : 'تمت إضافة وحفظ اللجنة بنجاح ✓');
   };
 
-  const addCommitteeMember = async (e: React.FormEvent) => {
+  const saveCommitteeMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!memberAdd) return;
-    await apiFetch(`/api/admin/committees/${memberAdd.committeeId}/members`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(memberAdd)
-    });
+    if (memberAdd.id) {
+      await apiFetch(`/api/admin/committee-members/${memberAdd.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          committee_id: memberAdd.committeeId,
+          person_name: memberAdd.person_name,
+          role_title: memberAdd.role_title,
+          is_head: memberAdd.is_head
+        })
+      });
+      flash('تم حفظ تعديل بيانات عضو اللجنة بنجاح ✓');
+    } else {
+      await apiFetch(`/api/admin/committees/${memberAdd.committeeId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(memberAdd)
+      });
+      flash('تمت إضافة وحفظ عضو اللجنة بنجاح ✓');
+    }
     setMemberAdd(null);
-    load();
+    await load();
   };
 
   const moveMember = async (cmId: number, newCommitteeId: number) => {
@@ -153,18 +244,29 @@ export const AdminCommitteesTab: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ committee_id: newCommitteeId })
     });
-    load();
+    await load();
+    flash('تم نقل العضو وحفظ التعديل بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="اللجان التخصصية"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          await refreshBootstrap();
+          flash('تم حفظ ومزامنة اللجان والأعضاء بنجاح ✓');
+        }}
+      />
+
       <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl p-4">
         <h3 className="font-bold text-slate-900">إدارة اللجان المتخصصة ({committees.length})</h3>
         <button
           type="button"
           onClick={() => {
             setEditing(null);
-            setForm({ name_ar: '', name_en: '', slug: '', description_ar: '', head_name: '', tasksText: '', logo_url: '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg' });
+            setForm({ name_ar: '', name_en: '', slug: '', description_ar: '', head_name: '', deputy_head_name: '', coordinator_name: '', tasksText: '', logo_url: '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg', sort_order: committees.length + 1, is_active: true });
             setModal(true);
           }}
           className="px-3.5 py-2 text-xs font-semibold bg-blue-700 text-white rounded-lg inline-flex items-center gap-1"
@@ -179,7 +281,12 @@ export const AdminCommitteesTab: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h4 className="text-base font-bold text-slate-950 font-display">{c.name_ar}</h4>
-                <p className="text-xs text-slate-500">رئيس اللجنة: {c.head_name || '-'} · عدد الأعضاء: {c.members?.length || 0}</p>
+                <p className="text-xs text-slate-500">
+                  رئيس اللجنة: {c.head_name || '-'}
+                  {c.deputy_head_name ? ` · نائب الرئيس: ${c.deputy_head_name}` : ''}
+                  {c.coordinator_name ? ` · منسق اللجنة: ${c.coordinator_name}` : ''}
+                  {` · عدد الأعضاء: ${c.members?.length || 0}`}
+                </p>
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <button
@@ -195,7 +302,19 @@ export const AdminCommitteesTab: React.FC = () => {
                     let tasks: string[] = [];
                     try { tasks = JSON.parse(c.tasks_ar || '[]'); } catch { tasks = []; }
                     setEditing(c);
-                    setForm({ name_ar: c.name_ar, name_en: c.name_en, slug: c.slug, description_ar: c.description_ar, head_name: c.head_name, tasksText: tasks.join('\n'), logo_url: c.logo_url });
+                    setForm({
+                      name_ar: c.name_ar,
+                      name_en: c.name_en,
+                      slug: c.slug,
+                      description_ar: c.description_ar,
+                      head_name: c.head_name || '',
+                      deputy_head_name: c.deputy_head_name || '',
+                      coordinator_name: c.coordinator_name || '',
+                      tasksText: tasks.join('\n'),
+                      logo_url: c.logo_url,
+                      sort_order: Number(c.sort_order ?? 10),
+                      is_active: c.is_active !== 0
+                    });
                     setModal(true);
                   }}
                   className="px-3 py-1.5 bg-blue-700 text-white rounded-lg font-semibold"
@@ -204,7 +323,12 @@ export const AdminCommitteesTab: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={async () => { await apiFetch(`/api/admin/committees/${c.id}`, { method: 'DELETE' }); load(); refreshBootstrap(); }}
+                  onClick={async () => {
+                    await apiFetch(`/api/admin/committees/${c.id}`, { method: 'DELETE' });
+                    await load();
+                    await refreshBootstrap();
+                    flash('تم حذف اللجنة بنجاح ✓');
+                  }}
                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -224,12 +348,36 @@ export const AdminCommitteesTab: React.FC = () => {
                       <select
                         value={c.id}
                         onChange={(e) => moveMember(m.id, Number(e.target.value))}
-                        className="px-1.5 py-1 border border-slate-200 rounded text-[11px] bg-white max-w-[110px]"
+                        className="px-1.5 py-1 border border-slate-200 rounded text-[11px] bg-white max-w-[100px]"
                         title="نقل إلى لجنة أخرى"
                       >
                         {committees.map((other) => <option key={other.id} value={other.id}>{other.name_ar}</option>)}
                       </select>
-                      <button type="button" onClick={async () => { await apiFetch(`/api/admin/committee-members/${m.id}`, { method: 'DELETE' }); load(); }} className="text-red-600 p-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMemberAdd({
+                            id: m.id,
+                            committeeId: c.id,
+                            person_name: m.person_name || '',
+                            role_title: m.role_title || 'عضو لجنة',
+                            is_head: Boolean(m.is_head)
+                          })
+                        }
+                        className="text-blue-700 p-1 hover:bg-blue-50 rounded"
+                        title="تعديل عضو اللجنة"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await apiFetch(`/api/admin/committee-members/${m.id}`, { method: 'DELETE' });
+                          await load();
+                          flash('تم حذف عضو اللجنة بنجاح ✓');
+                        }}
+                        className="text-red-600 p-1"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -243,7 +391,7 @@ export const AdminCommitteesTab: React.FC = () => {
 
       {modal && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <h3 className="font-bold">{editing ? 'تعديل اللجنة' : 'إضافة لجنة جديدة'}</h3>
               <button type="button" onClick={() => setModal(false)}><X className="w-5 h-5" /></button>
@@ -253,6 +401,13 @@ export const AdminCommitteesTab: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <input placeholder="الاسم بالإنجليزية" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
                 <input placeholder="اسم رئيس اللجنة" value={form.head_name} onChange={(e) => setForm({ ...form, head_name: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="نائب رئيس اللجنة" value={form.deputy_head_name} onChange={(e) => setForm({ ...form, deputy_head_name: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="منسق عام اللجنة" value={form.coordinator_name} onChange={(e) => setForm({ ...form, coordinator_name: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input type="number" placeholder="ترتيب الظهور" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                <label className="flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+                  <span>اللجنة مفعلة</span>
+                </label>
               </div>
               <textarea rows={2} placeholder="تعريف اللجنة" value={form.description_ar} onChange={(e) => setForm({ ...form, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
               <textarea rows={4} placeholder="مهام اللجنة (مهمة في كل سطر)" value={form.tasksText} onChange={(e) => setForm({ ...form, tasksText: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
@@ -261,7 +416,9 @@ export const AdminCommitteesTab: React.FC = () => {
                 <span>{form.logo_url ? 'تغيير شعار اللجنة' : 'رفع شعار اللجنة'}</span>
                 <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, logo_url: await uploadAdminFile(f, 'logos') }); }} />
               </label>
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">حفظ اللجنة</button>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ بيانات اللجنة
+              </button>
             </form>
           </div>
         </div>
@@ -270,12 +427,20 @@ export const AdminCommitteesTab: React.FC = () => {
       {memberAdd && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4">
-            <div className="flex justify-between items-center"><h3 className="font-bold">إضافة عضو للجنة</h3><button type="button" onClick={() => setMemberAdd(null)}><X className="w-5 h-5" /></button></div>
-            <form onSubmit={addCommitteeMember} className="space-y-3 text-xs">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold">{memberAdd.id ? 'تعديل عضو اللجنة' : 'إضافة عضو للجنة'}</h3>
+              <button type="button" onClick={() => setMemberAdd(null)}><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={saveCommitteeMember} className="space-y-3 text-xs">
               <input required placeholder="الاسم" value={memberAdd.person_name} onChange={(e) => setMemberAdd({ ...memberAdd, person_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
               <input placeholder="المسمى داخل اللجنة" value={memberAdd.role_title} onChange={(e) => setMemberAdd({ ...memberAdd, role_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <select value={memberAdd.committeeId} onChange={(e) => setMemberAdd({ ...memberAdd, committeeId: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                {committees.map((other) => <option key={other.id} value={other.id}>{other.name_ar}</option>)}
+              </select>
               <label className="flex items-center gap-2"><input type="checkbox" checked={memberAdd.is_head} onChange={(e) => setMemberAdd({ ...memberAdd, is_head: e.target.checked })} /><span>تعيين كرئيس للجنة</span></label>
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">إضافة</button>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> {memberAdd.id ? 'حفظ التعديلات' : 'حفظ وإضافة'}
+              </button>
             </form>
           </div>
         </div>
@@ -529,6 +694,7 @@ export const AdminNewsTab: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [notice, setNotice] = useState('');
   const [form, setForm] = useState<any>({
     title_ar: '',
     excerpt_ar: '',
@@ -546,6 +712,11 @@ export const AdminNewsTab: React.FC = () => {
     gallery: [] as MediaGalleryEntry[]
   });
 
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
+
   const load = () => apiFetch('/api/admin/news').then((r) => r.json()).then((d) => setItems(Array.isArray(d) ? d : []));
   useEffect(() => {
     load();
@@ -560,11 +731,21 @@ export const AdminNewsTab: React.FC = () => {
       body: JSON.stringify(form)
     });
     setModal(false);
-    load();
+    await load();
+    flash(editing ? 'تم حفظ تعديلات الخبر بنجاح ✓' : 'تم نشر وحفظ الخبر بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="الأخبار والمقالات"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          flash('تم حفظ ومزامنة الأخبار بنجاح ✓');
+        }}
+      />
+
       <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl p-4">
         <h3 className="font-bold text-slate-900">إدارة الأخبار والمقالات ({items.length})</h3>
         <button
@@ -648,7 +829,8 @@ export const AdminNewsTab: React.FC = () => {
                     type="button"
                     onClick={async () => {
                       await apiFetch(`/api/admin/news/${n.id}`, { method: 'DELETE' });
-                      load();
+                      await load();
+                      flash('تم حذف الخبر بنجاح ✓');
                     }}
                     className="text-red-600 hover:underline"
                   >
@@ -761,8 +943,10 @@ export const AdminEventsTab: React.FC = () => {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [regs, setRegs] = useState<{ title: string; list: any[] } | null>(null);
+  const [notice, setNotice] = useState('');
   const [form, setForm] = useState<any>({
     title_ar: '',
+    title_en: '',
     event_type: 'workshop',
     description_ar: '',
     cover_image: '',
@@ -777,6 +961,11 @@ export const AdminEventsTab: React.FC = () => {
     gallery: []
   });
 
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
+
   const load = () => apiFetch('/api/admin/events').then((r) => r.json()).then((d) => setItems(Array.isArray(d) ? d : []));
   useEffect(() => {
     load();
@@ -787,11 +976,21 @@ export const AdminEventsTab: React.FC = () => {
     const url = editing ? `/api/admin/events/${editing.id}` : '/api/admin/events';
     await apiFetch(url, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
     setModal(false);
-    load();
+    await load();
+    flash(editing ? 'تم حفظ تعديلات النشاط بنجاح ✓' : 'تمت إضافة وحفظ النشاط بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="الأنشطة والفعاليات"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          flash('تم حفظ ومزامنة الأنشطة بنجاح ✓');
+        }}
+      />
+
       <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl p-4">
         <h3 className="font-bold text-slate-900">إدارة الأنشطة والفعاليات ({items.length})</h3>
         <button
@@ -850,11 +1049,11 @@ export const AdminEventsTab: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditing(ev);
-                    setForm({ ...ev, cover_alt: ev.cover_alt || '', share_image_url: ev.share_image_url || '', logo_url: ev.logo_url || '', gallery: parseGalleryEntries(ev.gallery_json) });
-                    setModal(true);
-                  }}
+                    onClick={() => {
+                      setEditing(ev);
+                      setForm({ ...ev, title_en: ev.title_en || '', organizer: ev.organizer || '', partners_text: ev.partners_text || '', cover_alt: ev.cover_alt || '', share_image_url: ev.share_image_url || '', logo_url: ev.logo_url || '', gallery: parseGalleryEntries(ev.gallery_json) });
+                      setModal(true);
+                    }}
                   className="text-blue-700 font-semibold"
                 >
                   تعديل
@@ -863,7 +1062,8 @@ export const AdminEventsTab: React.FC = () => {
                   type="button"
                   onClick={async () => {
                     await apiFetch(`/api/admin/events/${ev.id}`, { method: 'DELETE' });
-                    load();
+                    await load();
+                    flash('تم حذف النشاط بنجاح ✓');
                   }}
                   className="text-red-600"
                 >
@@ -885,7 +1085,10 @@ export const AdminEventsTab: React.FC = () => {
               </button>
             </div>
             <form onSubmit={save} className="space-y-3 text-xs">
-              <input required placeholder="عنوان النشاط" value={form.title_ar} onChange={(e) => setForm({ ...form, title_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input required placeholder="عنوان النشاط *" value={form.title_ar} onChange={(e) => setForm({ ...form, title_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="العنوان بالإنجليزية (اختياري)" value={form.title_en || ''} onChange={(e) => setForm({ ...form, title_en: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <select value={form.event_type} onChange={(e) => setForm({ ...form, event_type: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
                   <option value="workshop">ورشة عمل</option>
@@ -905,6 +1108,10 @@ export const AdminEventsTab: React.FC = () => {
                 <input required placeholder="التاريخ والوقت (مثال: 2026-12-12 10:00)" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
                 <input placeholder="المكان" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="الجهة المنظمة" value={form.organizer || ''} onChange={(e) => setForm({ ...form, organizer: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="الشركاء المشاركون" value={form.partners_text || ''} onChange={(e) => setForm({ ...form, partners_text: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
               <textarea required rows={3} placeholder="وصف النشاط" value={form.description_ar} onChange={(e) => setForm({ ...form, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
 
               <EntityMediaEditor
@@ -917,8 +1124,8 @@ export const AdminEventsTab: React.FC = () => {
                 onChange={(patch) => setForm((prev: any) => ({ ...prev, ...patch }))}
               />
 
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">
-                حفظ النشاط
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ النشاط
               </button>
             </form>
           </div>
@@ -959,7 +1166,13 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [traineesModal, setTraineesModal] = useState<{ title: string; list: any[] } | null>(null);
+  const [notice, setNotice] = useState('');
   const [form, setForm] = useState<any>({});
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   const endpoint = mode === 'trainings' ? '/api/admin/trainings' : '/api/admin/projects';
   const load = () => apiFetch(endpoint).then((r) => r.json()).then((d) => setItems(Array.isArray(d) ? d : []));
@@ -972,11 +1185,21 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
     const url = editing ? `${endpoint}/${editing.id}` : endpoint;
     await apiFetch(url, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
     setModal(false);
-    load();
+    await load();
+    flash(editing ? 'تم حفظ التعديلات بنجاح ✓' : 'تمت الإضافة والحفظ بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName={mode === 'trainings' ? 'البرامج التدريبية' : 'المبادرات والمشروعات'}
+        notice={notice}
+        onSave={async () => {
+          await load();
+          flash('تم حفظ ومزامنة البيانات بنجاح ✓');
+        }}
+      />
+
       <div className="flex justify-between items-center bg-white border border-slate-200 rounded-xl p-4">
         <h3 className="font-bold text-slate-900">
           {mode === 'trainings' ? 'إدارة البرامج التدريبية' : 'إدارة المبادرات والمشروعات'} ({items.length})
@@ -987,7 +1210,7 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
             setEditing(null);
             setForm(
               mode === 'trainings'
-                ? { title_ar: '', track: 'cybersecurity', trainer_name: '', description_ar: '', cover_image: '', start_date: '', hours: 16, delivery_mode: 'hybrid', seats_total: 50, registration_status: 'open' }
+                ? { title_ar: '', track: 'cybersecurity', trainer_name: '', description_ar: '', cover_image: '', start_date: '', hours: 16, delivery_mode: 'hybrid', seats_total: 50, external_registration_url: '', registration_status: 'open' }
                 : { title_ar: '', description_ar: '', objectives_ar: '', target_audience_ar: '', cover_image: '', cover_alt: '', share_image_url: '', logo_url: '', execution_date: '2026', partners_text: '', results_ar: '', status: 'active', gallery: [] }
             );
             setModal(true);
@@ -1039,7 +1262,8 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                   type="button"
                   onClick={async () => {
                     await apiFetch(`${endpoint}/${item.id}`, { method: 'DELETE' });
-                    load();
+                    await load();
+                    flash('تم الحذف بنجاح ✓');
                   }}
                   className="text-red-600"
                 >
@@ -1055,7 +1279,7 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold">{editing ? 'تعديل' : 'إضافة جديد'}</h3>
+              <h3 className="font-bold">{editing ? 'تعديل البيانات' : 'إضافة جديد'}</h3>
               <button type="button" onClick={() => setModal(false)}>
                 <X className="w-5 h-5" />
               </button>
@@ -1094,6 +1318,7 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                       <option value="closed">التسجيل مغلق</option>
                     </select>
                   </div>
+                  <input dir="ltr" placeholder="رابط تسجيل خارجي (اختياري)" value={form.external_registration_url || ''} onChange={(e) => setForm({ ...form, external_registration_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
                   <textarea required rows={3} placeholder="الوصف" value={form.description_ar || ''} onChange={(e) => setForm({ ...form, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
                   <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg py-2 cursor-pointer">
                     <Upload className="w-4 h-4 text-blue-700" />
@@ -1103,6 +1328,14 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                 </>
               ) : (
                 <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input placeholder="تاريخ التنفيذ / السنة" value={form.execution_date || ''} onChange={(e) => setForm({ ...form, execution_date: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                    <input placeholder="الشركاء الداعمون" value={form.partners_text || ''} onChange={(e) => setForm({ ...form, partners_text: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                    <select value={form.status || 'active'} onChange={(e) => setForm({ ...form, status: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                      <option value="active">نشط</option>
+                      <option value="completed">مكتمل</option>
+                    </select>
+                  </div>
                   <input placeholder="الأهداف" value={form.objectives_ar || ''} onChange={(e) => setForm({ ...form, objectives_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
                   <input placeholder="الفئة المستهدفة" value={form.target_audience_ar || ''} onChange={(e) => setForm({ ...form, target_audience_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
                   <input placeholder="النتائج" value={form.results_ar || ''} onChange={(e) => setForm({ ...form, results_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
@@ -1118,8 +1351,8 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                   />
                 </>
               )}
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">
-                حفظ
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ التغييرات
               </button>
             </form>
           </div>

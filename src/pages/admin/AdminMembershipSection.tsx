@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Download, HelpCircle, KeyRound, Plus, Search, Trash2, Upload, X } from 'lucide-react';
+import { Check, Copy, Download, Edit3, HelpCircle, KeyRound, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { exportCsv, uploadAdminFile } from './adminHelpers';
 import { apiFetch } from '../../lib/authFetch';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 import type { JoinQuestion } from '../../types';
 
 export const AdminApplicationsTab: React.FC = () => {
@@ -10,25 +11,53 @@ export const AdminApplicationsTab: React.FC = () => {
   const [apps, setApps] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [notice, setNotice] = useState('');
   const [reviewing, setReviewing] = useState<any>(null);
-  const [reviewForm, setReviewForm] = useState({ status: 'accepted', assigned_committee_id: '', position_title: 'عضو عامل', admin_notes: '', issue_card: true });
+  const [reviewForm, setReviewForm] = useState({
+    full_name: '',
+    national_id_number: '',
+    phone: '',
+    whatsapp: '',
+    email: '',
+    governorate: '',
+    area: '',
+    qualification: '',
+    university_school: '',
+    major: '',
+    graduation_year: '',
+    preferred_committee_id: '',
+    skills: '',
+    experiences: '',
+    reason: '',
+    status: 'accepted',
+    assigned_committee_id: '',
+    position_title: 'عضو عامل',
+    admin_notes: '',
+    issue_card: true
+  });
 
   // Dynamic Join Questions Manager
   const [showQuestions, setShowQuestions] = useState(false);
   const [questions, setQuestions] = useState<JoinQuestion[]>([]);
+  const [editingQ, setEditingQ] = useState<JoinQuestion | null>(null);
   const [qForm, setQForm] = useState({ question_ar: '', question_en: '', field_type: 'text', optionsText: '', is_required: false });
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   const load = () => {
     const qs = new URLSearchParams();
     if (statusFilter) qs.set('status', statusFilter);
     if (search) qs.set('search', search);
-    apiFetch(`/api/admin/applications?${qs}`)
+    return apiFetch(`/api/admin/applications?${qs}`)
       .then((r) => r.json())
       .then((d) => setApps(Array.isArray(d) ? d : []));
   };
 
   const loadQuestions = () => {
-    apiFetch('/api/admin/join-questions')
+    return apiFetch('/api/admin/join-questions')
       .then((r) => r.json())
       .then((d) => setQuestions(Array.isArray(d) ? d : []));
   };
@@ -41,14 +70,15 @@ export const AdminApplicationsTab: React.FC = () => {
     loadQuestions();
   }, []);
 
-  const addQuestion = async (e: React.FormEvent) => {
+  const saveQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     const options = qForm.optionsText
       .split(/[\n,،]+/)
       .map((s) => s.trim())
       .filter(Boolean);
-    const res = await apiFetch('/api/admin/join-questions', {
-      method: 'POST',
+    const url = editingQ ? `/api/admin/join-questions/${editingQ.id}` : '/api/admin/join-questions';
+    const res = await apiFetch(url, {
+      method: editingQ ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question_ar: qForm.question_ar,
@@ -56,14 +86,16 @@ export const AdminApplicationsTab: React.FC = () => {
         field_type: qForm.field_type,
         options,
         is_required: qForm.is_required ? 1 : 0,
-        is_active: 1,
-        sort_order: questions.length + 1
+        is_active: editingQ ? editingQ.is_active : 1,
+        sort_order: editingQ ? editingQ.sort_order : questions.length + 1
       })
     });
     if (res.ok) {
+      setEditingQ(null);
       setQForm({ question_ar: '', question_en: '', field_type: 'text', optionsText: '', is_required: false });
-      loadQuestions();
-      refreshBootstrap();
+      await loadQuestions();
+      await refreshBootstrap();
+      flash(editingQ ? 'تم تعديل وحفظ السؤال بنجاح ✓' : 'تمت إضافة وحفظ السؤال الجديد بنجاح ✓');
     }
   };
 
@@ -73,14 +105,16 @@ export const AdminApplicationsTab: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch)
     });
-    loadQuestions();
-    refreshBootstrap();
+    await loadQuestions();
+    await refreshBootstrap();
+    flash('تم حفظ حالة السؤال ✓');
   };
 
   const deleteQuestion = async (id: number) => {
     await apiFetch(`/api/admin/join-questions/${id}`, { method: 'DELETE' });
-    loadQuestions();
-    refreshBootstrap();
+    await loadQuestions();
+    await refreshBootstrap();
+    flash('تم حذف السؤال بنجاح ✓');
   };
 
   const submitReview = async (e: React.FormEvent) => {
@@ -92,12 +126,14 @@ export const AdminApplicationsTab: React.FC = () => {
       body: JSON.stringify(reviewForm)
     });
     setReviewing(null);
-    load();
+    await load();
+    flash('تم حفظ تعديل البيانات والقرار بنجاح ✓');
   };
 
   const removeApp = async (id: number) => {
     await apiFetch(`/api/admin/applications/${id}`, { method: 'DELETE' });
-    load();
+    await load();
+    flash('تم حذف الطلب بنجاح ✓');
   };
 
   const renderCustomAnswers = (jsonStr?: string) => {
@@ -126,6 +162,17 @@ export const AdminApplicationsTab: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="طلبات العضوية والانضمام"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          await loadQuestions();
+          await refreshBootstrap();
+          flash('تم حفظ ومزامنة طلبات العضوية والأسئلة بنجاح ✓');
+        }}
+      />
+
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -174,7 +221,7 @@ export const AdminApplicationsTab: React.FC = () => {
             </button>
           </div>
 
-          <form onSubmit={addQuestion} className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <form onSubmit={saveQuestion} className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <input
               required
               placeholder="نص السؤال بالعربية *"
@@ -203,8 +250,20 @@ export const AdminApplicationsTab: React.FC = () => {
               <span>سؤال إجباري</span>
             </label>
             <button type="submit" className="sm:col-span-2 px-3 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-semibold inline-flex items-center justify-center gap-1">
-              <Plus className="w-3.5 h-3.5" /> إضافة سؤال
+              <Save className="w-3.5 h-3.5" /> {editingQ ? 'حفظ التعديل' : 'حفظ وإضافة السؤال'}
             </button>
+            {editingQ && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingQ(null);
+                  setQForm({ question_ar: '', question_en: '', field_type: 'text', optionsText: '', is_required: false });
+                }}
+                className="sm:col-span-12 px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-slate-700 font-semibold w-fit"
+              >
+                إلغاء تعديل السؤال
+              </button>
+            )}
             {(qForm.field_type === 'select' || qForm.field_type === 'radio') && (
               <input
                 placeholder="الخيارات مفصولة بفاصلة (مثال: مبتدئ، متوسط، متقدم)"
@@ -247,6 +306,29 @@ export const AdminApplicationsTab: React.FC = () => {
                       />
                       <span>إجباري</span>
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let parsedOpts: string[] = [];
+                        try {
+                          const p = JSON.parse(q.options_json || '[]');
+                          if (Array.isArray(p)) parsedOpts = p;
+                        } catch {
+                          parsedOpts = [];
+                        }
+                        setEditingQ(q);
+                        setQForm({
+                          question_ar: q.question_ar || '',
+                          question_en: q.question_en || '',
+                          field_type: q.field_type || 'text',
+                          optionsText: parsedOpts.join('، '),
+                          is_required: Boolean(q.is_required)
+                        });
+                      }}
+                      className="text-blue-700 font-semibold hover:underline inline-flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> تعديل
+                    </button>
                     <button type="button" onClick={() => deleteQuestion(q.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -293,6 +375,21 @@ export const AdminApplicationsTab: React.FC = () => {
                       onClick={() => {
                         setReviewing(a);
                         setReviewForm({
+                          full_name: a.full_name || '',
+                          national_id_number: a.national_id_number || '',
+                          phone: a.phone || '',
+                          whatsapp: a.whatsapp || '',
+                          email: a.email || '',
+                          governorate: a.governorate || '',
+                          area: a.area || '',
+                          qualification: a.qualification || '',
+                          university_school: a.university_school || '',
+                          major: a.major || '',
+                          graduation_year: a.graduation_year || '',
+                          preferred_committee_id: String(a.preferred_committee_id || ''),
+                          skills: a.skills || '',
+                          experiences: a.experiences || '',
+                          reason: a.reason || '',
                           status: a.status === 'pending' ? 'accepted' : a.status,
                           assigned_committee_id: String(a.assigned_committee_id || a.preferred_committee_id || ''),
                           position_title: 'عضو عامل',
@@ -302,7 +399,7 @@ export const AdminApplicationsTab: React.FC = () => {
                       }}
                       className="px-2.5 py-1 bg-blue-700 text-white rounded-md font-semibold"
                     >
-                      مراجعة
+                      تعديل ومراجعة
                     </button>
                     <button type="button" onClick={() => removeApp(a.id)} className="p-1 text-red-600 hover:bg-red-50 rounded-md">
                       <Trash2 className="w-3.5 h-3.5" />
@@ -317,53 +414,119 @@ export const AdminApplicationsTab: React.FC = () => {
 
       {reviewing && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold font-display text-slate-950">مراجعة طلب العضوية: {reviewing.full_name}</h3>
+              <h3 className="text-base font-bold font-display text-slate-950">تعديل ومراجعة طلب العضوية: {reviewing.full_name}</h3>
               <button type="button" onClick={() => setReviewing(null)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
-            <div className="bg-slate-50 rounded-xl p-4 text-xs space-y-1.5 text-slate-700">
-              <p><strong>الرقم القومي:</strong> <span className="font-mono-num">{reviewing.national_id_number || 'غير مسجل'}</span></p>
-              <p><strong>المؤهل:</strong> {reviewing.qualification} — {reviewing.university_school} ({reviewing.major})</p>
-              <p><strong>المهارات:</strong> {reviewing.skills || '-'}</p>
-              <p><strong>الخبرات:</strong> {reviewing.experiences || '-'}</p>
-              <p><strong>سبب الانضمام:</strong> {reviewing.reason || '-'}</p>
+            {(reviewing.national_id_front_url || reviewing.national_id_back_url || reviewing.custom_answers_json || reviewing.cv_url) && (
+              <div className="bg-slate-50 rounded-xl p-4 text-xs space-y-1.5 text-slate-700">
+                {(reviewing.national_id_front_url || reviewing.national_id_back_url) && (
+                  <div className="space-y-2">
+                    <p className="font-bold text-slate-900">صور البطاقة الشخصية:</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {reviewing.national_id_front_url && (
+                        <a href={reviewing.national_id_front_url} target="_blank" rel="noopener noreferrer" className="block space-y-1">
+                          <span className="text-[11px] text-slate-500">الوجه الأمامي (اضغط للتكبير)</span>
+                          <img src={reviewing.national_id_front_url} alt="وجه البطاقة الأمامي" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
+                        </a>
+                      )}
+                      {reviewing.national_id_back_url && (
+                        <a href={reviewing.national_id_back_url} target="_blank" rel="noopener noreferrer" className="block space-y-1">
+                          <span className="text-[11px] text-slate-500">الوجه الخلفي (اضغط للتكبير)</span>
+                          <img src={reviewing.national_id_back_url} alt="وجه البطاقة الخلفي" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-              {(reviewing.national_id_front_url || reviewing.national_id_back_url) && (
-                <div className="pt-2 border-t border-slate-200 space-y-2">
-                  <p className="font-bold text-slate-900">صور البطاقة الشخصية:</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {reviewing.national_id_front_url && (
-                      <a href={reviewing.national_id_front_url} target="_blank" rel="noopener noreferrer" className="block space-y-1">
-                        <span className="text-[11px] text-slate-500">الوجه الأمامي (اضغط للتكبير)</span>
-                        <img src={reviewing.national_id_front_url} alt="وجه البطاقة الأمامي" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
-                      </a>
-                    )}
-                    {reviewing.national_id_back_url && (
-                      <a href={reviewing.national_id_back_url} target="_blank" rel="noopener noreferrer" className="block space-y-1">
-                        <span className="text-[11px] text-slate-500">الوجه الخلفي (اضغط للتكبير)</span>
-                        <img src={reviewing.national_id_back_url} alt="وجه البطاقة الخلفي" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
-                      </a>
-                    )}
+                {renderCustomAnswers(reviewing.custom_answers_json)}
+
+                {reviewing.cv_url && (
+                  <a href={reviewing.cv_url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline inline-block pt-1">
+                    عرض السيرة الذاتية المرفقة
+                  </a>
+                )}
+              </div>
+            )}
+            <form onSubmit={submitReview} className="space-y-4 text-xs">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <p className="font-bold text-slate-900">تعديل بيانات المتقدم</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1">الاسم الكامل *</label>
+                    <input required value={reviewForm.full_name} onChange={(e) => setReviewForm({ ...reviewForm, full_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">الرقم القومي</label>
+                    <input inputMode="numeric" maxLength={14} value={reviewForm.national_id_number} onChange={(e) => setReviewForm({ ...reviewForm, national_id_number: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">رقم الهاتف</label>
+                    <input value={reviewForm.phone} onChange={(e) => setReviewForm({ ...reviewForm, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">رقم الواتساب</label>
+                    <input value={reviewForm.whatsapp} onChange={(e) => setReviewForm({ ...reviewForm, whatsapp: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">البريد الإلكتروني</label>
+                    <input type="email" value={reviewForm.email} onChange={(e) => setReviewForm({ ...reviewForm, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">المحافظة</label>
+                    <input value={reviewForm.governorate} onChange={(e) => setReviewForm({ ...reviewForm, governorate: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">المنطقة / المركز</label>
+                    <input value={reviewForm.area} onChange={(e) => setReviewForm({ ...reviewForm, area: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">المؤهل</label>
+                    <input value={reviewForm.qualification} onChange={(e) => setReviewForm({ ...reviewForm, qualification: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">الجامعة / المدرسة</label>
+                    <input value={reviewForm.university_school} onChange={(e) => setReviewForm({ ...reviewForm, university_school: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">التخصص</label>
+                    <input value={reviewForm.major} onChange={(e) => setReviewForm({ ...reviewForm, major: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">سنة التخرج</label>
+                    <input value={reviewForm.graduation_year} onChange={(e) => setReviewForm({ ...reviewForm, graduation_year: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">اللجنة المرغوبة</label>
+                    <select value={reviewForm.preferred_committee_id} onChange={(e) => setReviewForm({ ...reviewForm, preferred_committee_id: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                      <option value="">-- اختر اللجنة --</option>
+                      {committees.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}
+                    </select>
                   </div>
                 </div>
-              )}
+                <div>
+                  <label className="block font-semibold mb-1">المهارات</label>
+                  <input value={reviewForm.skills} onChange={(e) => setReviewForm({ ...reviewForm, skills: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">الخبرات</label>
+                  <input value={reviewForm.experiences} onChange={(e) => setReviewForm({ ...reviewForm, experiences: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">سبب الانضمام</label>
+                  <textarea rows={2} value={reviewForm.reason} onChange={(e) => setReviewForm({ ...reviewForm, reason: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+                </div>
+              </div>
 
-              {renderCustomAnswers(reviewing.custom_answers_json)}
-
-              {reviewing.cv_url && (
-                <a href={reviewing.cv_url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline inline-block pt-1">
-                  عرض السيرة الذاتية المرفقة
-                </a>
-              )}
-            </div>
-            <form onSubmit={submitReview} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold mb-1">القرار</label>
                 <select value={reviewForm.status} onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg">
                   <option value="accepted">قبول العضوية وتفعيل الملف</option>
                   <option value="needs_info">طلب استكمال البيانات</option>
                   <option value="rejected">رفض الطلب</option>
+                  <option value="pending">إعادة لقيد المراجعة</option>
                 </select>
               </div>
               <div>
@@ -375,7 +538,16 @@ export const AdminApplicationsTab: React.FC = () => {
               </div>
               <div>
                 <label className="block font-semibold mb-1">المسمى / المنصب</label>
-                <input value={reviewForm.position_title} onChange={(e) => setReviewForm({ ...reviewForm, position_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <input list="sdg-position-presets" value={reviewForm.position_title} onChange={(e) => setReviewForm({ ...reviewForm, position_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <datalist id="sdg-position-presets">
+                  <option value="عضو عامل" />
+                  <option value="عضو لجنة" />
+                  <option value="منسق عام لجنة" />
+                  <option value="نائب رئيس لجنة" />
+                  <option value="رئيس لجنة" />
+                  <option value="منسق عام محافظة" />
+                  <option value="نائب منسق عام محافظة" />
+                </datalist>
               </div>
               <div>
                 <label className="block font-semibold mb-1">ملاحظات الإدارة (تصل للمتقدم عند الاستعلام)</label>
@@ -388,7 +560,7 @@ export const AdminApplicationsTab: React.FC = () => {
                 </label>
               )}
               <button type="submit" className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
-                <Check className="w-4 h-4" /> حفظ القرار
+                <Check className="w-4 h-4" /> حفظ البيانات والقرار
               </button>
             </form>
           </div>
@@ -409,16 +581,26 @@ export const AdminMembersTab: React.FC = () => {
   const [committeeFilter, setCommitteeFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [notice, setNotice] = useState('');
   const [form, setForm] = useState({
+    member_number: '',
     full_name: '',
+    national_id_number: '',
     email: '',
     phone: '',
+    whatsapp: '',
     governorate: '',
+    area: '',
+    qualification: '',
+    university_school: '',
+    major: '',
+    graduation_year: '',
     committee_id: '',
     position_title: 'عضو عامل',
     avatar_url: '',
     status: 'active',
-    expires_at: ''
+    expires_at: '',
+    no_expiry: false
   });
 
   // Member password activation modal state
@@ -427,12 +609,17 @@ export const AdminMembersTab: React.FC = () => {
   const [pwdResult, setPwdResult] = useState<{ email: string; password: string; message: string } | null>(null);
   const [pwdError, setPwdError] = useState('');
 
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
+
   const load = () => {
     const qs = new URLSearchParams();
     if (search) qs.set('search', search);
     if (statusFilter) qs.set('status', statusFilter);
     if (committeeFilter) qs.set('committee_id', committeeFilter);
-    apiFetch(`/api/admin/members?${qs}`)
+    return apiFetch(`/api/admin/members?${qs}`)
       .then((r) => r.json())
       .then((d) => setMembers(Array.isArray(d) ? d : []));
   };
@@ -443,22 +630,50 @@ export const AdminMembersTab: React.FC = () => {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ full_name: '', email: '', phone: '', governorate: '', committee_id: '', position_title: 'عضو عامل', avatar_url: '', status: 'active', expires_at: '' });
+    setForm({
+      member_number: '',
+      full_name: '',
+      national_id_number: '',
+      email: '',
+      phone: '',
+      whatsapp: '',
+      governorate: '',
+      area: '',
+      qualification: '',
+      university_school: '',
+      major: '',
+      graduation_year: '',
+      committee_id: '',
+      position_title: 'عضو عامل',
+      avatar_url: '',
+      status: 'active',
+      expires_at: '',
+      no_expiry: false
+    });
     setModalOpen(true);
   };
 
   const openEdit = (m: any) => {
     setEditing(m);
     setForm({
+      member_number: m.member_number || '',
       full_name: m.full_name || '',
+      national_id_number: m.national_id_number || '',
       email: m.email || '',
       phone: m.phone || '',
+      whatsapp: m.whatsapp || '',
       governorate: m.governorate || '',
+      area: m.area || '',
+      qualification: m.qualification || '',
+      university_school: m.university_school || '',
+      major: m.major || '',
+      graduation_year: m.graduation_year || '',
       committee_id: String(m.committee_id || ''),
       position_title: m.position_title || 'عضو عامل',
       avatar_url: m.avatar_url || '',
       status: m.status || 'active',
-      expires_at: m.expires_at || ''
+      expires_at: m.expires_at || '',
+      no_expiry: !m.expires_at
     });
     setModalOpen(true);
   };
@@ -470,24 +685,28 @@ export const AdminMembersTab: React.FC = () => {
     await apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
+      body: JSON.stringify({ ...form, expires_at: form.no_expiry ? '' : form.expires_at })
     });
     setModalOpen(false);
-    load();
+    await load();
+    flash(editing ? 'تم حفظ تعديلات بيانات العضو بنجاح ✓' : 'تمت إضافة وحفظ العضو بنجاح ✓');
   };
 
-  const issueCardForMember = async (memberId: number) => {
+  const issueCardForMember = async (m: any) => {
+    const isPermanent = !m.expires_at || (String(m.position_title || '').includes('رئيس المبادرة') && !String(m.position_title || '').includes('نائب'));
     await apiFetch('/api/admin/cards/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member_id: memberId })
+      body: JSON.stringify({ member_id: m.id, no_expiry: isPermanent, expiry_date: isPermanent ? '' : m.expires_at })
     });
-    load();
+    await load();
+    flash(`تم إصدار وحفظ كارنيه العضو ${m.full_name} بنجاح ✓`);
   };
 
   const deleteMember = async (id: number) => {
     await apiFetch(`/api/admin/members/${id}`, { method: 'DELETE' });
-    load();
+    await load();
+    flash('تم حذف العضو بنجاح ✓');
   };
 
   const activateMemberPassword = async (e: React.FormEvent) => {
@@ -506,11 +725,21 @@ export const AdminMembersTab: React.FC = () => {
       return;
     }
     setPwdResult(d);
-    load();
+    await load();
+    flash('تم حفظ وتفعيل كلمة مرور العضو بنجاح ✓');
   };
 
   return (
     <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="إدارة الأعضاء"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          flash('تم حفظ ومزامنة بيانات الأعضاء بنجاح ✓');
+        }}
+      />
+
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث بالاسم أو رقم العضوية..." className="px-3 py-2 text-xs border border-slate-300 rounded-lg w-52" />
@@ -567,7 +796,7 @@ export const AdminMembersTab: React.FC = () => {
                     {m.card_number ? (
                       <span className="text-emerald-700 font-semibold">{m.card_number}</span>
                     ) : (
-                      <button type="button" onClick={() => issueCardForMember(m.id)} className="text-blue-700 underline">إصدار كارنيه</button>
+                      <button type="button" onClick={() => issueCardForMember(m)} className="text-blue-700 underline">إصدار كارنيه</button>
                     )}
                   </td>
                   <td className="py-2.5 px-3">
@@ -607,31 +836,67 @@ export const AdminMembersTab: React.FC = () => {
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold font-display">{editing ? 'تعديل بيانات العضو' : 'إضافة عضو جديد'}</h3>
               <button type="button" onClick={() => setModalOpen(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <form onSubmit={saveMember} className="space-y-3 text-xs">
-              <input required placeholder="الاسم بالكامل" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input required placeholder="الاسم بالكامل *" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="رقم العضوية (تلقائي إذا تُرك فارغًا)" value={form.member_number} onChange={(e) => setForm({ ...form, member_number: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
+                <input placeholder="الرقم القومي (14 رقمًا)" inputMode="numeric" maxLength={14} value={form.national_id_number} onChange={(e) => setForm({ ...form, national_id_number: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                <input placeholder="المحافظة" value={form.governorate} onChange={(e) => setForm({ ...form, governorate: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <input placeholder="المنطقة / المركز" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
                 <input placeholder="البريد الإلكتروني" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                <input placeholder="رقم الهاتف" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="رقم الهاتف" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                <input placeholder="رقم الواتساب" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                <input placeholder="المؤهل" value={form.qualification} onChange={(e) => setForm({ ...form, qualification: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="الجامعة / المدرسة" value={form.university_school} onChange={(e) => setForm({ ...form, university_school: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="التخصص" value={form.major} onChange={(e) => setForm({ ...form, major: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input placeholder="سنة التخرج" value={form.graduation_year} onChange={(e) => setForm({ ...form, graduation_year: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <select value={form.committee_id} onChange={(e) => setForm({ ...form, committee_id: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
                   <option value="">-- اللجنة --</option>
                   {committees.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}
                 </select>
-                <input placeholder="المنصب" value={form.position_title} onChange={(e) => setForm({ ...form, position_title: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <input list="sdg-position-presets-members" placeholder="المنصب (منسق عام محافظة / رئيس لجنة...)" value={form.position_title} onChange={(e) => setForm({ ...form, position_title: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <datalist id="sdg-position-presets-members">
+                  <option value="رئيس المبادرة" />
+                  <option value="نائب رئيس المبادرة" />
+                  <option value="عضو عامل" />
+                  <option value="عضو لجنة" />
+                  <option value="منسق عام لجنة" />
+                  <option value="نائب رئيس لجنة" />
+                  <option value="رئيس لجنة" />
+                  <option value="منسق عام محافظة" />
+                  <option value="نائب منسق عام محافظة" />
+                </datalist>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 items-center">
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
                   <option value="active">نشط</option>
                   <option value="suspended">موقوف</option>
                   <option value="expired">منتهي</option>
                 </select>
-                <input type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <div className="space-y-1">
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.no_expiry}
+                      onChange={(e) => setForm({ ...form, no_expiry: e.target.checked, expires_at: e.target.checked ? '' : form.expires_at })}
+                    />
+                    <span>بدون تاريخ انتهاء (دائم)</span>
+                  </label>
+                  {!form.no_expiry && (
+                    <input type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} className="w-full px-3 py-1.5 border border-slate-300 rounded-lg" />
+                  )}
+                </div>
               </div>
               <label className="flex items-center justify-center gap-2 py-2 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50">
                 <Upload className="w-4 h-4 text-blue-700" />
@@ -641,7 +906,9 @@ export const AdminMembersTab: React.FC = () => {
                   if (file) setForm({ ...form, avatar_url: await uploadAdminFile(file, 'avatars') });
                 }} />
               </label>
-              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold">حفظ العضو</button>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ بيانات العضو
+              </button>
             </form>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { BrandLogo, Committee, JoinQuestion, PartnerItem, SiteStats, UserSession } from '../types';
 import { apiFetch, setStoredAuthToken } from '../lib/authFetch';
+import { OFFICIAL_SITE_ORIGIN, trackPageView } from '../lib/analytics';
 
 export type Lang = 'ar' | 'en';
 
@@ -281,7 +282,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.title = resolvedTitle;
     }
 
-    const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+    const rawConfiguredOrigin = (settings.site_url || '').trim().replace(/\/+$/, '');
+    const isInternalOrigin = /(localhost|127\.0\.0\.1|ais-dev-|ais-pre-)/i.test(rawConfiguredOrigin);
+    const canonicalOrigin = rawConfiguredOrigin && !isInternalOrigin ? rawConfiguredOrigin : OFFICIAL_SITE_ORIGIN;
     const canonicalUrl = `${canonicalOrigin}${cleanPath}`;
 
     let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
@@ -292,11 +295,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     canonical.href = canonicalUrl;
 
-    const favSrc = settings.favicon_url || settings.logo_url || '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg';
-    const iconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
-    if (iconLink) iconLink.href = favSrc;
-    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
-    if (appleIcon) appleIcon.href = favSrc;
+    const rawFav = (settings.favicon_url || '').trim();
+    const isCustomFav = Boolean(rawFav && rawFav !== '/icons/logo-192.png' && !rawFav.includes('FB_IMG_1789831319399_ac126220'));
+    if (isCustomFav) {
+      const iconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+      if (iconLink) iconLink.href = rawFav;
+      const appleIcon = document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
+      if (appleIcon) appleIcon.href = rawFav;
+    }
 
     const upsertMeta = (attr: 'name' | 'property', key: string, content: string) => {
       if (!content) return;
@@ -319,10 +325,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       upsertMeta('property', 'og:title', resolvedTitle);
       upsertMeta('property', 'og:description', resolvedDesc);
       upsertMeta('property', 'og:image', absOgImg);
+      upsertMeta('property', 'og:image:secure_url', absOgImg);
       upsertMeta('property', 'og:url', canonicalUrl);
       upsertMeta('name', 'twitter:title', resolvedTitle);
       upsertMeta('name', 'twitter:description', resolvedDesc);
       upsertMeta('name', 'twitter:image', absOgImg);
+
+      trackPageView(cleanPath, resolvedTitle);
     }
   }, [currentPath, lang, settings.seo_title, settings.seo_description, settings.about_summary_ar, settings.site_url, settings.favicon_url, settings.logo_url, settings.og_image_url]);
 

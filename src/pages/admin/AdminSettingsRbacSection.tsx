@@ -1,39 +1,70 @@
 import React, { useEffect, useState } from 'react';
-import { CheckSquare, KeyRound, Lock, Plus, Save, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle2, CheckSquare, Edit3, KeyRound, Lock, Plus, Save, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { uploadAdminFile } from './adminHelpers';
 import { apiFetch } from '../../lib/authFetch';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 
 export const AdminContactsTab: React.FC = () => {
   const [list, setList] = useState<any[]>([]);
+  const [notice, setNotice] = useState('');
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
   const load = () => apiFetch('/api/admin/contacts').then((r) => r.json()).then((d) => setList(Array.isArray(d) ? d : []));
   useEffect(() => { load(); }, []);
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-      <h3 className="text-base font-bold font-display">رسائل تواصل معنا ({list.length})</h3>
-      <div className="divide-y divide-slate-100 text-xs">
-        {list.length === 0 ? <p className="py-6 text-center text-slate-500">لا توجد رسائل واردة بعد</p> : list.map((m) => (
-          <div key={m.id} className="py-4 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-950">{m.name} — {m.subject}</span>
-              <select
-                value={m.status}
-                onChange={async (e) => {
-                  await apiFetch(`/api/admin/contacts/${m.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: e.target.value }) });
-                  load();
-                }}
-                className="px-2 py-1 border border-slate-200 rounded"
-              >
-                <option value="new">جديدة</option>
-                <option value="replied">تم الرد</option>
-                <option value="archived">مؤرشفة</option>
-              </select>
+    <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="الرسائل والشكاوى"
+        notice={notice}
+        onSave={async () => {
+          await load();
+          flash('تم حفظ ومزامنة حالة الرسائل بنجاح ✓');
+        }}
+      />
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+        <h3 className="text-base font-bold font-display">رسائل تواصل معنا ({list.length})</h3>
+        <div className="divide-y divide-slate-100 text-xs">
+          {list.length === 0 ? <p className="py-6 text-center text-slate-500">لا توجد رسائل واردة بعد</p> : list.map((m) => (
+            <div key={m.id} className="py-4 space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-950">{m.name} — {m.subject}</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={m.status}
+                    onChange={async (e) => {
+                      await apiFetch(`/api/admin/contacts/${m.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: e.target.value }) });
+                      await load();
+                      flash('تم حفظ حالة الرسالة بنجاح ✓');
+                    }}
+                    className="px-2 py-1 border border-slate-200 rounded"
+                  >
+                    <option value="new">جديدة</option>
+                    <option value="replied">تم الرد</option>
+                    <option value="archived">مؤرشفة</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await apiFetch(`/api/admin/contacts/${m.id}`, { method: 'DELETE' });
+                      await load();
+                      flash('تم حذف الرسالة بنجاح ✓');
+                    }}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    title="حذف الرسالة"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <p className="text-slate-500 font-mono-num">{m.email} · {m.phone}</p>
+              <p className="text-slate-700 leading-relaxed">{m.message}</p>
             </div>
-            <p className="text-slate-500 font-mono-num">{m.email} · {m.phone}</p>
-            <p className="text-slate-700 leading-relaxed">{m.message}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -43,6 +74,7 @@ export const AdminSettingsTab: React.FC = () => {
   const { refreshBootstrap } = useApp();
   const [form, setForm] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     apiFetch('/api/admin/settings')
@@ -50,106 +82,145 @@ export const AdminSettingsTab: React.FC = () => {
       .then((d) => setForm(d || {}));
   }, []);
 
+  const persistSettings = async () => {
+    setSaving(true);
+    try {
+      await apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+      await refreshBootstrap();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    await apiFetch('/api/admin/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-    refreshBootstrap();
+    await persistSettings();
   };
 
   return (
-    <form onSubmit={save} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6 text-xs">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-bold text-slate-950 font-display">إعدادات الموقع والهوية البصرية و SEO</h3>
-        <button type="submit" className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-700 text-white rounded-xl font-semibold">
-          <Save className="w-4 h-4" /> {saved ? 'تم الحفظ ✓' : 'حفظ الإعدادات'}
-        </button>
-      </div>
-
-      {/* Membership Auto Card Toggle */}
-      <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl flex items-center justify-between gap-4">
-        <div>
-          <p className="font-bold text-slate-950">إصدار الكارنيه الإلكتروني فور التقديم</p>
-          <p className="text-slate-600 mt-0.5">عند التفعيل، يحصل المتقدم في صفحة الانضمام على رقم العضوية والكارنيه الإلكتروني فور إرسال الطلب.</p>
+    <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="إعدادات الموقع والهوية البصرية"
+        notice={saved ? 'تم حفظ جميع الإعدادات وتحديث الموقع بنجاح ✓' : ''}
+        onSave={persistSettings}
+        saving={saving}
+        saveLabel="حفظ الإعدادات"
+      />
+      <form onSubmit={save} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6 text-xs">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-slate-950 font-display">إعدادات الموقع والهوية البصرية و SEO</h3>
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-700 text-white rounded-xl font-semibold disabled:opacity-60">
+            <Save className="w-4 h-4" /> {saved ? 'تم الحفظ ✓' : 'حفظ الإعدادات'}
+          </button>
         </div>
-        <label className="inline-flex items-center gap-2 font-bold text-blue-800 cursor-pointer shrink-0">
-          <input
-            type="checkbox"
-            checked={form.auto_issue_card_on_apply !== '0'}
-            onChange={(e) => setForm({ ...form, auto_issue_card_on_apply: e.target.checked ? '1' : '0' })}
-          />
-          <span>مفعل</span>
-        </label>
-      </div>
 
-      {/* Colors */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-100 pb-5">
-        <label className="space-y-1 block"><span>الكحلي الداكن</span><input type="color" value={form.navy_color || '#0a192f'} onChange={(e) => setForm({ ...form, navy_color: e.target.value })} className="w-full h-9 rounded border" /></label>
-        <label className="space-y-1 block"><span>الأزرق التقني الرئيسي</span><input type="color" value={form.primary_color || '#1d4ed8'} onChange={(e) => setForm({ ...form, primary_color: e.target.value })} className="w-full h-9 rounded border" /></label>
-        <label className="space-y-1 block"><span>السماوي</span><input type="color" value={form.cyan_color || '#06b6d4'} onChange={(e) => setForm({ ...form, cyan_color: e.target.value })} className="w-full h-9 rounded border" /></label>
-        <label className="space-y-1 block"><span>لون مساعد</span><input type="color" value={form.accent_color || '#0ea5e9'} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} className="w-full h-9 rounded border" /></label>
-      </div>
-
-      {/* Logos & Hero */}
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
-            <img src={form.logo_url || '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg'} alt="شعار المبادرة" className="w-12 h-12 object-contain rounded" />
-            <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار جيل رقمي آمن</span>
-            <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, logo_url: await uploadAdminFile(f, 'logos') }); }} />
-          </label>
-          <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
-            <img src={form.umbrella_logo_url || '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg'} alt="شعار حكاية وطن" className="w-12 h-12 object-contain rounded" />
-            <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار اتحاد حكاية وطن</span>
-            <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, umbrella_logo_url: await uploadAdminFile(f, 'logos') }); }} />
-          </label>
-          <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
-            <img src={form.ministry_logo_url || '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg'} alt="شعار وزارة التضامن" className="w-12 h-12 object-contain rounded" />
-            <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار وزارة التضامن</span>
-            <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, ministry_logo_url: await uploadAdminFile(f, 'logos') }); }} />
-          </label>
-          <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
-            {form.hero_image_url ? (
-              <img src={form.hero_image_url} alt="صورة الواجهة" className="w-20 h-12 object-cover rounded" />
-            ) : (
-              <Upload className="w-6 h-6 text-blue-700" />
-            )}
-            <span className="font-semibold">تغيير صورة الواجهة (Hero)</span>
-            <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, hero_image_url: await uploadAdminFile(f, 'images') }); }} />
+        {/* Membership Auto Card Toggle */}
+        <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl flex items-center justify-between gap-4">
+          <div>
+            <p className="font-bold text-slate-950">إصدار الكارنيه الإلكتروني فور التقديم</p>
+            <p className="text-slate-600 mt-0.5">عند التفعيل، يحصل المتقدم في صفحة الانضمام على رقم العضوية والكارنيه الإلكتروني فور إرسال الطلب.</p>
+          </div>
+          <label className="inline-flex items-center gap-2 font-bold text-blue-800 cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={form.auto_issue_card_on_apply !== '0'}
+              onChange={(e) => setForm({ ...form, auto_issue_card_on_apply: e.target.checked ? '1' : '0' })}
+            />
+            <span>مفعل</span>
           </label>
         </div>
-        <p className="text-[11px] text-slate-500">
-          لإدارة الأيقونة (Favicon)، صورة المشاركة الاجتماعية (Open Graph)، وشعارات الجهات الشريكة وترتيبها، استخدم تبويب <strong>إدارة الشعارات والهوية البصرية</strong>.
-        </p>
-      </div>
 
-      {/* Texts */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div><label className="block font-semibold mb-1">اسم المبادرة (عربي)</label><input value={form.site_name_ar || ''} onChange={(e) => setForm({ ...form, site_name_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">الشعار اللفظي (Slogan)</label><input value={form.site_slogan_ar || ''} onChange={(e) => setForm({ ...form, site_slogan_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div className="sm:col-span-2"><label className="block font-semibold mb-1">نص المظلة الرسمية</label><input value={form.umbrella_text_ar || ''} onChange={(e) => setForm({ ...form, umbrella_text_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div className="sm:col-span-2"><label className="block font-semibold mb-1">نبذة من نحن</label><textarea rows={2} value={form.about_summary_ar || ''} onChange={(e) => setForm({ ...form, about_summary_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">الرؤية</label><textarea rows={2} value={form.vision_ar || ''} onChange={(e) => setForm({ ...form, vision_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">الرسالة</label><textarea rows={2} value={form.mission_ar || ''} onChange={(e) => setForm({ ...form, mission_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-      </div>
+        {/* Colors */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-100 pb-5">
+          <label className="space-y-1 block"><span>الكحلي الداكن</span><input type="color" value={form.navy_color || '#0a192f'} onChange={(e) => setForm({ ...form, navy_color: e.target.value })} className="w-full h-9 rounded border" /></label>
+          <label className="space-y-1 block"><span>الأزرق التقني الرئيسي</span><input type="color" value={form.primary_color || '#1d4ed8'} onChange={(e) => setForm({ ...form, primary_color: e.target.value })} className="w-full h-9 rounded border" /></label>
+          <label className="space-y-1 block"><span>السماوي</span><input type="color" value={form.cyan_color || '#06b6d4'} onChange={(e) => setForm({ ...form, cyan_color: e.target.value })} className="w-full h-9 rounded border" /></label>
+          <label className="space-y-1 block"><span>لون مساعد</span><input type="color" value={form.accent_color || '#0ea5e9'} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} className="w-full h-9 rounded border" /></label>
+        </div>
 
-      {/* Contact & Social */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-        <div><label className="block font-semibold mb-1">البريد الإلكتروني الرسمي</label><input value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">رقم التواصل</label><input value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">رابط Facebook</label><input value={form.facebook_url || ''} onChange={(e) => setForm({ ...form, facebook_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">رابط Instagram</label><input value={form.instagram_url || ''} onChange={(e) => setForm({ ...form, instagram_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">رابط TikTok</label><input value={form.tiktok_url || ''} onChange={(e) => setForm({ ...form, tiktok_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div><label className="block font-semibold mb-1">عنوان SEO الرئيسي</label><input value={form.seo_title || ''} onChange={(e) => setForm({ ...form, seo_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div className="sm:col-span-2"><label className="block font-semibold mb-1">وصف SEO (Meta Description)</label><input value={form.seo_description || ''} onChange={(e) => setForm({ ...form, seo_description: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
-        <div className="sm:col-span-2"><label className="block font-semibold mb-1">الدومين الرسمي للموقع (اختياري لروابط Sitemap و Canonical — يُكتشف تلقائيًا عند تركه فارغًا)</label><input dir="ltr" placeholder="https://your-domain.com" value={form.site_url || ''} onChange={(e) => setForm({ ...form, site_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" /></div>
-      </div>
-    </form>
+        {/* Logos & Hero */}
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
+              <img src={form.logo_url || '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg'} alt="شعار المبادرة" className="w-12 h-12 object-contain rounded" />
+              <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار جيل رقمي آمن</span>
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, logo_url: await uploadAdminFile(f, 'logos') }); }} />
+            </label>
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
+              <img src={form.umbrella_logo_url || '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg'} alt="شعار حكاية وطن" className="w-12 h-12 object-contain rounded" />
+              <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار اتحاد حكاية وطن</span>
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, umbrella_logo_url: await uploadAdminFile(f, 'logos') }); }} />
+            </label>
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
+              <img src={form.ministry_logo_url || '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg'} alt="شعار وزارة التضامن" className="w-12 h-12 object-contain rounded" />
+              <span className="inline-flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-700" /> شعار وزارة التضامن</span>
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, ministry_logo_url: await uploadAdminFile(f, 'logos') }); }} />
+            </label>
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl p-3 cursor-pointer hover:bg-slate-50">
+              {form.hero_image_url ? (
+                <img src={form.hero_image_url} alt="صورة الواجهة" className="w-20 h-12 object-cover rounded" />
+              ) : (
+                <Upload className="w-6 h-6 text-blue-700" />
+              )}
+              <span className="font-semibold">تغيير صورة الواجهة (Hero)</span>
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, hero_image_url: await uploadAdminFile(f, 'images') }); }} />
+            </label>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            لإدارة الأيقونة (Favicon)، صورة المشاركة الاجتماعية (Open Graph)، وشعارات الجهات الشريكة وترتيبها، استخدم تبويب <strong>إدارة الشعارات والهوية البصرية</strong>.
+          </p>
+        </div>
+
+        {/* Texts */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className="block font-semibold mb-1">اسم المبادرة (عربي)</label><input value={form.site_name_ar || ''} onChange={(e) => setForm({ ...form, site_name_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">الشعار اللفظي (Slogan)</label><input value={form.site_slogan_ar || ''} onChange={(e) => setForm({ ...form, site_slogan_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div className="sm:col-span-2"><label className="block font-semibold mb-1">نص المظلة الرسمية</label><input value={form.umbrella_text_ar || ''} onChange={(e) => setForm({ ...form, umbrella_text_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div className="sm:col-span-2"><label className="block font-semibold mb-1">نبذة من نحن</label><textarea rows={2} value={form.about_summary_ar || ''} onChange={(e) => setForm({ ...form, about_summary_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">الرؤية</label><textarea rows={2} value={form.vision_ar || ''} onChange={(e) => setForm({ ...form, vision_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">الرسالة</label><textarea rows={2} value={form.mission_ar || ''} onChange={(e) => setForm({ ...form, mission_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+        </div>
+
+        {/* Contact & Social & Official Links */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+          <div><label className="block font-semibold mb-1">البريد الإلكتروني الرسمي</label><input value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">رقم الهاتف والواتساب الرسمي (يظهر في الموقع)</label><input dir="ltr" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" /></div>
+          <div>
+            <label className="block font-semibold mb-1">رابط الموقع الرسمي لوزارة التضامن الاجتماعي</label>
+            <input dir="ltr" placeholder="https://www.moss.gov.eg" value={form.ministry_website_url || ''} onChange={(e) => setForm({ ...form, ministry_website_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">رابط الموقع الرسمي لاتحاد حكاية وطن (اختياري)</label>
+            <input dir="ltr" placeholder="https://..." value={form.umbrella_website_url || ''} onChange={(e) => setForm({ ...form, umbrella_website_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+          </div>
+          <div><label className="block font-semibold mb-1">رابط Facebook</label><input value={form.facebook_url || ''} onChange={(e) => setForm({ ...form, facebook_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">رابط Instagram</label><input value={form.instagram_url || ''} onChange={(e) => setForm({ ...form, instagram_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">رابط TikTok</label><input value={form.tiktok_url || ''} onChange={(e) => setForm({ ...form, tiktok_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div><label className="block font-semibold mb-1">عنوان SEO الرئيسي</label><input value={form.seo_title || ''} onChange={(e) => setForm({ ...form, seo_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div className="sm:col-span-2"><label className="block font-semibold mb-1">وصف SEO (Meta Description)</label><input value={form.seo_description || ''} onChange={(e) => setForm({ ...form, seo_description: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" /></div>
+          <div className="sm:col-span-2"><label className="block font-semibold mb-1">الدومين الرسمي للموقع (اختياري لروابط Sitemap و Canonical — يُكتشف تلقائيًا عند تركه فارغًا)</label><input dir="ltr" placeholder="https://your-domain.com" value={form.site_url || ''} onChange={(e) => setForm({ ...form, site_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" /></div>
+        </div>
+
+        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+          {saved ? (
+            <span className="inline-flex items-center gap-1.5 text-emerald-700 font-bold">
+              <CheckCircle2 className="w-4 h-4" /> تم حفظ جميع الإعدادات بنجاح ✓
+            </span>
+          ) : (
+            <span className="text-slate-500">تأكد من الضغط على حفظ بعد أي تعديل</span>
+          )}
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold disabled:opacity-60">
+            <Save className="w-4 h-4" /> حفظ جميع الإعدادات
+          </button>
+        </div>
+      </form>
+    </div>
   );
 };
 
@@ -168,6 +239,14 @@ export const AdminUsersRbacTab: React.FC = () => {
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [pwdEdit, setPwdEdit] = useState<{ user_id: number; name: string; password: string } | null>(null);
+  const [editingAdmin, setEditingAdmin] = useState<{
+    user_id: number;
+    name: string;
+    email: string;
+    title_ar: string;
+    admin_role: string;
+    status: string;
+  } | null>(null);
   const [permModal, setPermModal] = useState<{
     user_id: number;
     name: string;
@@ -263,6 +342,15 @@ export const AdminUsersRbacTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <AdminSectionSaveBar
+        sectionName="إدارة المشرفين والصلاحيات"
+        notice={okMsg}
+        onSave={async () => {
+          await load();
+          setOkMsg('تم حفظ ومزامنة بيانات المشرفين والصلاحيات بنجاح ✓');
+        }}
+      />
+
       {/* Super Admin Governance Banner */}
       <div className={`rounded-2xl p-5 border flex flex-wrap items-center justify-between gap-4 text-xs ${isSuperAdmin ? 'bg-slate-950 text-white border-slate-800' : 'bg-amber-50 text-amber-900 border-amber-200'}`}>
         <div className="flex items-start gap-3">
@@ -319,7 +407,7 @@ export const AdminUsersRbacTab: React.FC = () => {
               {allowedRoleEntries.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <button type="submit" className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-semibold inline-flex items-center justify-center gap-1">
-              <Plus className="w-3.5 h-3.5" /> إضافة / ترقية مشرف
+              <Save className="w-3.5 h-3.5" /> حفظ وإضافة / ترقية مشرف
             </button>
           </div>
         </form>
@@ -414,13 +502,31 @@ export const AdminUsersRbacTab: React.FC = () => {
                         </button>
                       )}
                       {canEditAdmin && (!isTargetSuper || isSuperAdmin) && (
-                        <button
-                          type="button"
-                          onClick={() => setPwdEdit({ user_id: a.user_id, name: a.name, password: '' })}
-                          className="inline-flex items-center gap-1 px-2 py-1 border border-slate-200 rounded-md text-slate-700 hover:text-blue-700 font-semibold"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" /> كلمة المرور
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingAdmin({
+                                user_id: a.user_id,
+                                name: a.name || '',
+                                email: a.email || '',
+                                title_ar: a.title_ar || '',
+                                admin_role: a.admin_role || 'admin',
+                                status: a.status || 'active'
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-1 border border-blue-200 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 font-semibold"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" /> تعديل بيانات
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPwdEdit({ user_id: a.user_id, name: a.name, password: '' })}
+                            className="inline-flex items-center gap-1 px-2 py-1 border border-slate-200 rounded-md text-slate-700 hover:text-blue-700 font-semibold"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" /> كلمة المرور
+                          </button>
+                        </>
                       )}
                       {canDeleteAdmin && !isTargetSuper && (
                         <button
@@ -600,40 +706,121 @@ export const AdminUsersRbacTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {editingAdmin && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold font-display">تعديل بيانات المشرف: {editingAdmin.name}</h3>
+              <button type="button" onClick={() => setEditingAdmin(null)}><X className="w-4 h-4 text-slate-400" /></button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setErr('');
+                const res = await apiFetch(`/api/admin/admins/${editingAdmin.user_id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(editingAdmin)
+                });
+                const d = await res.json();
+                if (!res.ok) {
+                  setErr(d.error || 'تعذر حفظ تعديل البيانات');
+                  return;
+                }
+                setEditingAdmin(null);
+                setOkMsg(`تم حفظ تعديلات بيانات المشرف (${editingAdmin.name}) بنجاح ✓`);
+                load();
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block font-semibold mb-1">الاسم بالكامل *</label>
+                <input required value={editingAdmin.name} onChange={(e) => setEditingAdmin({ ...editingAdmin, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">البريد الإلكتروني *</label>
+                <input required type="email" value={editingAdmin.email} onChange={(e) => setEditingAdmin({ ...editingAdmin, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">المسمى الوظيفي / اللقب</label>
+                <input value={editingAdmin.title_ar} onChange={(e) => setEditingAdmin({ ...editingAdmin, title_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">الدور الرئيسي</label>
+                  <select
+                    value={editingAdmin.admin_role}
+                    disabled={editingAdmin.admin_role === 'super_admin' && !isSuperAdmin}
+                    onChange={(e) => setEditingAdmin({ ...editingAdmin, admin_role: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    {allowedRoleEntries.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">الحالة</label>
+                  <select value={editingAdmin.status} onChange={(e) => setEditingAdmin({ ...editingAdmin, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                    <option value="active">نشط</option>
+                    <option value="suspended">موقوف</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ التعديلات
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export const AdminAuditLogsTab: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
+  const [notice, setNotice] = useState('');
+  const load = () => apiFetch('/api/admin/audit-logs').then((r) => r.json()).then((d) => setLogs(Array.isArray(d) ? d : []));
   useEffect(() => {
-    apiFetch('/api/admin/audit-logs').then((r) => r.json()).then((d) => setLogs(Array.isArray(d) ? d : []));
+    load();
   }, []);
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
-      <table className="w-full text-xs text-start">
-        <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>
-            <th className="py-2.5 px-3 text-start">المشرف</th>
-            <th className="py-2.5 px-3 text-start">الإجراء</th>
-            <th className="py-2.5 px-3 text-start">الكيان</th>
-            <th className="py-2.5 px-3 text-start">التفاصيل</th>
-            <th className="py-2.5 px-3 text-start">التاريخ</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {logs.map((l) => (
-            <tr key={l.id}>
-              <td className="py-2 px-3 font-mono-num">{l.admin_email}</td>
-              <td className="py-2 px-3 font-semibold">{l.action}</td>
-              <td className="py-2 px-3">{l.entity_type} #{l.entity_id}</td>
-              <td className="py-2 px-3 font-mono-num text-slate-500 max-w-xs truncate">{l.details_json}</td>
-              <td className="py-2 px-3 font-mono-num text-slate-500">{l.created_at}</td>
+    <div className="space-y-4">
+      <AdminSectionSaveBar
+        sectionName="سجل النشاط والمراجعة"
+        notice={notice}
+        saveLabel="حفظ وتحديث السجل"
+        onSave={async () => {
+          await load();
+          setNotice('تم تحديث وحفظ عرض سجل النشاط بنجاح ✓');
+          setTimeout(() => setNotice(''), 3000);
+        }}
+      />
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
+        <table className="w-full text-xs text-start">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="py-2.5 px-3 text-start">المشرف</th>
+              <th className="py-2.5 px-3 text-start">الإجراء</th>
+              <th className="py-2.5 px-3 text-start">الكيان</th>
+              <th className="py-2.5 px-3 text-start">التفاصيل</th>
+              <th className="py-2.5 px-3 text-start">التاريخ</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {logs.map((l) => (
+              <tr key={l.id}>
+                <td className="py-2 px-3 font-mono-num">{l.admin_email}</td>
+                <td className="py-2 px-3 font-semibold">{l.action}</td>
+                <td className="py-2 px-3">{l.entity_type} #{l.entity_id}</td>
+                <td className="py-2 px-3 font-mono-num text-slate-500 max-w-xs truncate">{l.details_json}</td>
+                <td className="py-2 px-3 font-mono-num text-slate-500">{l.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

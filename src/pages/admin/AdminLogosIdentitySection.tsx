@@ -18,6 +18,7 @@ import { useApp } from '../../context/AppContext';
 import { apiFetch } from '../../lib/authFetch';
 import { uploadAdminFile } from './adminHelpers';
 import { SafeImage } from '../../components/SafeImage';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 import type { BrandLogo } from '../../types';
 
 const ROLE_OPTIONS = [
@@ -173,12 +174,13 @@ export const AdminLogosIdentitySection: React.FC = () => {
 
   return (
     <div className="space-y-8 text-xs">
-      {notice && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center gap-2 font-semibold">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{notice}</span>
-        </div>
-      )}
+      <AdminSectionSaveBar
+        sectionName="إدارة الشعارات والهوية البصرية"
+        notice={notice}
+        onSave={saveQuickSlots}
+        saving={savingSlots}
+        saveLabel="حفظ الشعارات والهوية"
+      />
 
       {/* 1. Primary Brand Slots */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">

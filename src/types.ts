@@ -19,6 +19,8 @@ export interface Committee {
   tasks_en?: string;
   head_name: string;
   head_title: string;
+  deputy_head_name?: string;
+  coordinator_name?: string;
   sort_order: number;
   is_active: number;
   members?: CommitteeMember[];
@@ -36,15 +38,27 @@ export interface CommitteeMember {
   is_head: number;
 }
 
+export type LeadershipTier =
+  | 'president'
+  | 'vice_president'
+  | 'board'
+  | 'governorate_coordinator'
+  | 'deputy_governorate_coordinator'
+  | 'committee_coordinator'
+  | 'committee_head'
+  | 'deputy_committee_head'
+  | 'committee_member';
+
 export interface LeadershipItem {
   id: number;
   name_ar: string;
   name_en: string;
   role_ar: string;
   role_en: string;
-  tier: 'president' | 'vice_president' | 'board' | 'committee_head' | 'committee_member';
+  tier: LeadershipTier;
   committee_id: number | null;
   committee_name?: string;
+  governorate?: string;
   avatar_url: string;
   bio_ar: string;
   bio_en: string;
@@ -221,6 +235,12 @@ export interface CardDesign {
   vp_names_ar?: string;
   president_title_ar?: string;
   president_name_ar?: string;
+  president_signature_url?: string;
+  president_signature_text?: string;
+  stamp_url?: string;
+  show_stamp?: number;
+  stamp_position?: 'over_signature' | 'right_center' | 'right_bottom' | 'back_left';
+  whatsapp_number?: string;
   back_title_ar?: string;
   back_slogan_ar?: string;
   extra_rows_json?: string;

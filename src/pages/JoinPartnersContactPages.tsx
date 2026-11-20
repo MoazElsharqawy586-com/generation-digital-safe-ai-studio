@@ -5,72 +5,8 @@ import { SafeImage } from '../components/SafeImage';
 import { ElectronicCardView } from '../components/ElectronicCardView';
 import { apiFetch } from '../lib/authFetch';
 import type { PartnerItem } from '../types';
-
-const AR_MONTHS = [
-  'يناير',
-  'فبراير',
-  'مارس',
-  'أبريل',
-  'مايو',
-  'يونيو',
-  'يوليو',
-  'أغسطس',
-  'سبتمبر',
-  'أكتوبر',
-  'نوفمبر',
-  'ديسمبر'
-];
-
-function parseEgyptianNationalId(raw: string): {
-  clean: string;
-  isValid: boolean;
-  birthDateISO: string;
-  birthDateAr: string;
-  gender: 'ذكر' | 'أنثى' | '';
-  age: number | null;
-} {
-  const clean = raw
-    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-    .replace(/\D/g, '')
-    .slice(0, 14);
-
-  if (!/^[23]\d{13}$/.test(clean)) {
-    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
-  }
-
-  const century = clean[0] === '2' ? 1900 : 2000;
-  const year = century + Number(clean.slice(1, 3));
-  const month = Number(clean.slice(3, 5));
-  const day = Number(clean.slice(5, 7));
-
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
-  }
-
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  const now = new Date();
-  if (
-    dt.getUTCFullYear() !== year ||
-    dt.getUTCMonth() !== month - 1 ||
-    dt.getUTCDate() !== day ||
-    dt.getTime() > now.getTime()
-  ) {
-    return { clean, isValid: false, birthDateISO: '', birthDateAr: '', gender: '', age: null };
-  }
-
-  const genderDigit = Number(clean[12]);
-  const gender: 'ذكر' | 'أنثى' = genderDigit % 2 === 1 ? 'ذكر' : 'أنثى';
-  const birthDateISO = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const birthDateAr = `${day} ${AR_MONTHS[month - 1]} ${year}`;
-
-  let age = now.getFullYear() - year;
-  const monthDiff = now.getMonth() + 1 - month;
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < day)) {
-    age--;
-  }
-
-  return { clean, isValid: true, birthDateISO, birthDateAr, gender, age: Math.max(0, age) };
-}
+import { parseEgyptianNationalId } from '../lib/egyptianNationalId';
+import { trackEvent } from '../lib/analytics';
 
 export const JoinPage: React.FC = () => {
   const { committees, joinQuestions, t, navigate, applyAuthSession } = useApp();
@@ -157,7 +93,13 @@ export const JoinPage: React.FC = () => {
     setForm((prev) => ({
       ...prev,
       national_id_number: parsed.clean,
-      ...(parsed.isValid ? { birth_date: parsed.birthDateISO, gender: parsed.gender } : {})
+      ...(parsed.isValid
+        ? {
+            birth_date: parsed.birthDateISO,
+            gender: parsed.gender,
+            governorate: prev.governorate || parsed.governorate
+          }
+        : {})
     }));
   };
 
@@ -214,6 +156,11 @@ export const JoinPage: React.FC = () => {
       if (data.user && data.token) {
         applyAuthSession(data.user, data.token);
       }
+      trackEvent('sign_up', {
+        method: 'membership_form',
+        committee_id: form.preferred_committee_id,
+        application_number: data.application_number
+      });
       setResult(data);
     } catch (e: any) {
       setError(e.message);
@@ -229,8 +176,10 @@ export const JoinPage: React.FC = () => {
     const res = await fetch(`/api/public/applications/status?code=${encodeURIComponent(trackCode)}&phone=${encodeURIComponent(trackPhone)}`);
     const data = await res.json();
     if (!res.ok) {
+      trackEvent('application_track', { found: false });
       setTrackError(data.error || 'لم يتم العثور على الطلب');
     } else {
+      trackEvent('application_track', { found: true, status: data.application?.status || 'unknown' });
       setTrackResult(data);
     }
   };
@@ -422,23 +371,15 @@ export const JoinPage: React.FC = () => {
                 {t('1. البيانات الشخصية', '1. Personal Information')}
               </h2>
 
-              {/* Name & Phone */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t('الاسم بالكامل', 'Full Name')} <span className="text-red-500">*</span>
-                  </label>
-                  <input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t('رقم الهاتف', 'Phone')} <span className="text-red-500">*</span>
-                  </label>
-                  <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl font-mono-num" />
-                </div>
+              {/* Full Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {t('الاسم بالكامل', 'Full Name')} <span className="text-red-500">*</span>
+                </label>
+                <input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl" />
               </div>
 
-              {/* Egyptian National ID + Auto-Extracted Summary Box */}
+              {/* Egyptian National ID Directly Below Name + Auto-Extracted Summary Box */}
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-bold text-slate-900 mb-1.5">
@@ -461,14 +402,14 @@ export const JoinPage: React.FC = () => {
                     </span>
                     {parsedNationalId.clean.length === 14 && !parsedNationalId.isValid && (
                       <span className="text-red-600 font-semibold">
-                        {t('الرقم القومي غير صالح، تأكد من كتابة 14 رقمًا صحيحًا', 'Invalid Egyptian National ID')}
+                        {parsedNationalId.errorAr || t('الرقم القومي غير صالح، تأكد من كتابة 14 رقمًا صحيحًا', 'Invalid Egyptian National ID')}
                       </span>
                     )}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-4 sm:p-5 space-y-3">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     <div>
                       <p className="text-xs text-slate-500 mb-1">{t('تاريخ الميلاد', 'Birth Date')}</p>
                       <p className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
@@ -487,15 +428,27 @@ export const JoinPage: React.FC = () => {
                         {parsedNationalId.isValid && parsedNationalId.age !== null ? parsedNationalId.age : '—'}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">{t('محافظة الميلاد', 'Birth Governorate')}</p>
+                      <p className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
+                        {parsedNationalId.isValid && parsedNationalId.governorate ? parsedNationalId.governorate : '—'}
+                      </p>
+                    </div>
                   </div>
                   <p className="text-xs text-slate-500">
-                    {t('يتم استخراج تاريخ الميلاد والنوع تلقائيًا من الرقم القومي.', 'Birth date and gender are automatically extracted from the National ID.')}
+                    {t('يتم استخراج تاريخ الميلاد والنوع والسن ومحافظة الميلاد تلقائيًا من الرقم القومي.', 'Birth date, gender, age, and governorate are automatically extracted from the National ID.')}
                   </p>
                 </div>
               </div>
 
-              {/* Account Credentials, Location, WhatsApp & Photo */}
+              {/* Account Credentials, Contact, Location & Photo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t('رقم الهاتف', 'Phone')} <span className="text-red-500">*</span>
+                  </label>
+                  <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl font-mono-num" />
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     {t('البريد الإلكتروني', 'Email')} <span className="text-red-500">*</span>
@@ -855,33 +808,53 @@ export const PartnersPage: React.FC = () => {
       </section>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-        {partners.map((p) => (
-          <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between space-y-4">
-            <div className="space-y-4">
-              <div className="h-28 flex items-center justify-center bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <SafeImage src={p.logo_url} alt={p.name_ar} className="max-h-24 w-auto object-contain" />
+        {partners.map((p) => {
+          const siteUrl = p.website_url && p.website_url !== '/' && p.website_url !== '#'
+            ? /^https?:\/\//i.test(p.website_url.trim())
+              ? p.website_url.trim()
+              : `https://${p.website_url.trim()}`
+            : '';
+          return (
+            <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between space-y-4">
+              <div className="space-y-4">
+                {siteUrl ? (
+                  <a
+                    href={siteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackEvent('outbound_click', { label: `partner:${p.name_ar}`, url: siteUrl })}
+                    className="h-28 flex items-center justify-center bg-slate-50 hover:bg-blue-50/40 rounded-xl p-3 border border-slate-100 hover:border-blue-300 transition-colors"
+                  >
+                    <SafeImage src={p.logo_url} alt={p.name_ar} className="max-h-24 w-auto object-contain" />
+                  </a>
+                ) : (
+                  <div className="h-28 flex items-center justify-center bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <SafeImage src={p.logo_url} alt={p.name_ar} className="max-h-24 w-auto object-contain" />
+                  </div>
+                )}
+                <div>
+                  <span className="text-xs font-semibold text-blue-700">
+                    {p.partner_type === 'umbrella' ? t('المظلة الرسمية', 'Official Umbrella') : p.partner_type === 'government' ? t('جهة حكومية مشرفة', 'Government Body') : t('شريك استراتيجي', 'Partner')}
+                  </span>
+                  <h2 className="text-lg font-bold text-slate-950 font-display mt-1">{t(p.name_ar, p.name_en)}</h2>
+                  <p className="text-sm text-slate-600 mt-2 leading-relaxed">{t(p.description_ar, p.description_en)}</p>
+                </div>
               </div>
-              <div>
-                <span className="text-xs font-semibold text-blue-700">
-                  {p.partner_type === 'umbrella' ? t('المظلة الرسمية', 'Official Umbrella') : p.partner_type === 'government' ? t('جهة حكومية مشرفة', 'Government Body') : t('شريك استراتيجي', 'Partner')}
-                </span>
-                <h2 className="text-lg font-bold text-slate-950 font-display mt-1">{t(p.name_ar, p.name_en)}</h2>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">{t(p.description_ar, p.description_en)}</p>
-              </div>
+              {siteUrl && (
+                <a
+                  href={siteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => trackEvent('outbound_click', { label: `partner:${p.name_ar}`, url: siteUrl })}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
+                >
+                  <span>{t('زيارة الموقع الرسمي', 'Official Website')}</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
             </div>
-            {p.website_url && p.website_url !== '/' && (
-              <a
-                href={p.website_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
-              >
-                <span>{t('زيارة الموقع الرسمي', 'Official Website')}</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -906,6 +879,7 @@ export const ContactPage: React.FC = () => {
     });
     const data = await res.json();
     if (res.ok) {
+      trackEvent('generate_lead', { form_type: 'contact' });
       setSent(data.message);
       setForm({ name: '', email: '', phone: '', subject: '', message: '' });
     } else {
@@ -934,20 +908,53 @@ export const ContactPage: React.FC = () => {
               <Phone className="w-5 h-5 text-blue-700 shrink-0" />
               <span className="font-mono-num" dir="ltr">{phone}</span>
             </a>
+            <a
+              href={`https://wa.me/${phone.replace(/\D/g, '').replace(/^0/, '20')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => trackEvent('outbound_click', { label: 'contact_whatsapp' })}
+              className="flex items-center justify-between gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-semibold text-sm transition-colors"
+            >
+              <span className="flex items-center gap-2.5">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-600 shrink-0 fill-current" aria-hidden="true">
+                  <path d="M12.03 2C6.5 2 2 6.46 2 11.96c0 1.77.47 3.5 1.36 5.02L2 22l5.17-1.35a10.04 10.04 0 0 0 4.86 1.24h.01c5.52 0 10.02-4.46 10.02-9.96A9.93 9.93 0 0 0 12.03 2Zm5.83 14.12c-.25.7-1.44 1.33-1.99 1.41-.51.08-1.15.11-1.86-.11-.43-.14-.98-.32-1.69-.63-2.97-1.28-4.91-4.27-5.06-4.47-.15-.2-1.21-1.61-1.21-3.07 0-1.46.76-2.18 1.03-2.48.27-.3.59-.37.79-.37.2 0 .39 0 .56.01.18.01.42-.07.66.5.25.6.85 2.07.92 2.22.07.15.12.32.02.52-.1.2-.15.32-.3.5-.15.18-.31.4-.45.54-.15.15-.3.31-.13.61.17.3.77 1.27 1.65 2.05 1.13 1.01 2.09 1.32 2.39 1.47.3.15.47.12.64-.07.17-.2.74-.86.94-1.16.2-.3.4-.25.67-.15.27.1 1.74.82 2.04.97.3.15.5.22.57.35.08.13.08.74-.17 1.44Z" />
+                </svg>
+                <span>{t('تواصل مباشر عبر واتساب', 'Chat on WhatsApp')}</span>
+              </span>
+              <span className="font-mono-num font-bold" dir="ltr">{phone}</span>
+            </a>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
             <h3 className="text-base font-bold text-slate-950 font-display">{t('منصات التواصل الاجتماعي', 'Social Media')}</h3>
             <div className="flex flex-col gap-2 text-sm">
-              <a href={settings.facebook_url || 'https://www.facebook.com/generation.digital.safe'} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400">
+              <a
+                href={settings.facebook_url || 'https://www.facebook.com/generation.digital.safe'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackEvent('outbound_click', { label: 'contact_facebook' })}
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400"
+              >
                 <span>Facebook — جيل رقمي آمن</span>
                 <ExternalLink className="w-4 h-4 text-blue-700" />
               </a>
-              <a href={settings.instagram_url || 'https://www.instagram.com/generation.digital.safe/'} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400">
+              <a
+                href={settings.instagram_url || 'https://www.instagram.com/generation.digital.safe/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackEvent('outbound_click', { label: 'contact_instagram' })}
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400"
+              >
                 <span>Instagram — @generation.digital.safe</span>
                 <ExternalLink className="w-4 h-4 text-blue-700" />
               </a>
-              <a href={settings.tiktok_url || 'https://www.tiktok.com/@generation.digital.safe'} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400">
+              <a
+                href={settings.tiktok_url || 'https://www.tiktok.com/@generation.digital.safe'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackEvent('outbound_click', { label: 'contact_tiktok' })}
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-400"
+              >
                 <span>TikTok — @generation.digital.safe</span>
                 <ExternalLink className="w-4 h-4 text-blue-700" />
               </a>

@@ -1,10 +1,13 @@
 import React from 'react';
-import { Award, Compass, Eye, ShieldCheck, Target } from 'lucide-react';
+import { Award, Compass, ExternalLink, Eye, ShieldCheck, Target } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
+import { normalizeExternalUrl } from '../lib/url';
 
 export const AboutPage: React.FC = () => {
   const { settings, t, navigate, marqueePartners } = useApp();
+  const ministryWebsite = normalizeExternalUrl(settings.ministry_website_url) || 'https://www.moss.gov.eg';
+  const umbrellaWebsite = normalizeExternalUrl(settings.umbrella_website_url);
 
   let values: { title_ar: string; title_en: string; desc_ar: string }[] = [];
   let goals: { title_ar: string; title_en: string }[] = [];
@@ -58,12 +61,31 @@ export const AboutPage: React.FC = () => {
                 <span className="text-slate-400">{t('رقم الإشهار الرسمي:', 'Official Reg. No:')}</span>{' '}
                 <strong className="font-mono-num text-slate-900">1279 / 2025</strong>
               </div>
+              <div>
+                <a
+                  href={ministryWebsite}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  <span>{t('الموقع الرسمي لوزارة التضامن الاجتماعي', 'Ministry of Social Solidarity Official Website')}</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
             </div>
           </div>
           <div className="lg:col-span-4 flex items-center justify-center gap-4">
             <SafeImage src={settings.logo_url || '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg'} alt="جيل رقمي آمن" className="w-24 h-24 object-contain border border-slate-200 rounded-xl p-1.5 bg-white" />
-            <SafeImage src={settings.umbrella_logo_url || '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg'} alt="حكاية وطن" className="w-24 h-24 object-contain border border-slate-200 rounded-xl p-1.5 bg-white" />
-            <SafeImage src={settings.ministry_logo_url || '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg'} alt="وزارة التضامن الاجتماعي" className="w-24 h-24 object-contain border border-slate-200 rounded-xl p-1.5 bg-white" />
+            {umbrellaWebsite ? (
+              <a href={umbrellaWebsite} target="_blank" rel="noopener noreferrer" title="اتحاد حكاية وطن">
+                <SafeImage src={settings.umbrella_logo_url || '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg'} alt="حكاية وطن" className="w-24 h-24 object-contain border border-slate-200 hover:border-blue-400 rounded-xl p-1.5 bg-white" />
+              </a>
+            ) : (
+              <SafeImage src={settings.umbrella_logo_url || '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg'} alt="حكاية وطن" className="w-24 h-24 object-contain border border-slate-200 rounded-xl p-1.5 bg-white" />
+            )}
+            <a href={ministryWebsite} target="_blank" rel="noopener noreferrer" title={t('الموقع الرسمي لوزارة التضامن الاجتماعي', 'Ministry of Social Solidarity Official Website')}>
+              <SafeImage src={settings.ministry_logo_url || '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg'} alt="وزارة التضامن الاجتماعي" className="w-24 h-24 object-contain border border-slate-200 hover:border-blue-400 rounded-xl p-1.5 bg-white" />
+            </a>
           </div>
         </div>
 
@@ -121,17 +143,33 @@ export const AboutPage: React.FC = () => {
         <div className="space-y-4">
           <h2 className="text-2xl font-bold text-slate-950 font-display">{t('الجهات الداعمة والشريكة', 'Supporting & Partner Entities')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            {marqueePartners.map((p) => (
-              <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-5 flex items-center gap-4">
-                <SafeImage src={p.logo_url} alt={p.name_ar} className="w-16 h-16 object-contain rounded-lg border border-slate-100 p-1 shrink-0" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">{t(p.name_ar, p.name_en)}</h3>
-                  <button type="button" onClick={() => navigate('/partners')} className="text-xs text-blue-700 hover:underline mt-1">
-                    {t('صفحة الشركاء', 'Partners page')}
-                  </button>
+            {marqueePartners.map((p) => {
+              const siteUrl = normalizeExternalUrl(p.website_url);
+              return (
+                <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-5 flex items-center gap-4">
+                  <SafeImage src={p.logo_url} alt={p.name_ar} className="w-16 h-16 object-contain rounded-lg border border-slate-100 p-1 shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900">{t(p.name_ar, p.name_en)}</h3>
+                    <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                      {siteUrl && (
+                        <a
+                          href={siteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"
+                        >
+                          <span>{t('زيارة الموقع', 'Visit Website')}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      <button type="button" onClick={() => navigate('/partners')} className="text-xs text-slate-600 hover:text-blue-700 hover:underline">
+                        {t('صفحة الشركاء', 'Partners page')}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

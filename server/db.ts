@@ -20,7 +20,12 @@ for (const sub of ['images', 'logos', 'avatars', 'documents', 'media']) {
 export const DB_PATH = path.join(DATA_DIR, 'sdg_initiative.db');
 export const db = new Database(DB_PATH);
 
-db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
+try {
+  db.pragma('journal_mode = DELETE');
+} catch (err) {
+  console.warn('SQLite journal_mode notice:', err);
+}
 db.pragma('foreign_keys = ON');
 
 export function initDatabase() {
@@ -496,6 +501,10 @@ function ensureSchemaMigrations() {
   ensureColumn('gallery', 'entity_type', "TEXT DEFAULT 'none'");
   ensureColumn('gallery', 'entity_id', 'INTEGER');
 
+  ensureColumn('committees', 'deputy_head_name', "TEXT DEFAULT ''");
+  ensureColumn('committees', 'coordinator_name', "TEXT DEFAULT ''");
+  ensureColumn('leadership', 'governorate', "TEXT DEFAULT ''");
+
   // Customizable electronic card design text, leadership signatures & custom fields
   ensureColumn('card_designs', 'header_title_ar', "TEXT DEFAULT 'جيل رقمي آمن'");
   ensureColumn('card_designs', 'header_title_en', "TEXT DEFAULT 'SAFE DIGITAL GENERATION'");
@@ -507,6 +516,12 @@ function ensureSchemaMigrations() {
   ensureColumn('card_designs', 'vp_names_ar', "TEXT DEFAULT 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح'");
   ensureColumn('card_designs', 'president_title_ar', "TEXT DEFAULT 'رئيس المبادرة'");
   ensureColumn('card_designs', 'president_name_ar', "TEXT DEFAULT 'أ. معاذ الشرقاوي'");
+  ensureColumn('card_designs', 'president_signature_url', "TEXT DEFAULT ''");
+  ensureColumn('card_designs', 'president_signature_text', "TEXT DEFAULT ''");
+  ensureColumn('card_designs', 'stamp_url', "TEXT DEFAULT '/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png'");
+  ensureColumn('card_designs', 'show_stamp', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('card_designs', 'stamp_position', "TEXT DEFAULT 'over_signature'");
+  ensureColumn('card_designs', 'whatsapp_number', "TEXT DEFAULT '01277714301'");
   ensureColumn('card_designs', 'back_title_ar', "TEXT DEFAULT 'شركاء النجاح والشراكات المؤسسية'");
   ensureColumn('card_designs', 'back_slogan_ar', "TEXT DEFAULT 'معاً ... نبني مجتمعاً رقمياً آمناً'");
   ensureColumn('card_designs', 'extra_rows_json', "TEXT DEFAULT '[]'");
@@ -515,6 +530,7 @@ function ensureSchemaMigrations() {
 const OFFICIAL_SDG_LOGO = '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg';
 const OFFICIAL_HEKAYET_LOGO = '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg';
 const OFFICIAL_MOSS_LOGO = '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg';
+const OFFICIAL_STAMP_LOGO = '/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png';
 
 function migrateLogosAndDefaults() {
   const replacements: [string, string][] = [
@@ -547,10 +563,44 @@ function migrateLogosAndDefaults() {
   const insertIfMissing = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertIfMissing.run('umbrella_logo_url', OFFICIAL_HEKAYET_LOGO);
   insertIfMissing.run('ministry_logo_url', OFFICIAL_MOSS_LOGO);
-  insertIfMissing.run('favicon_url', OFFICIAL_SDG_LOGO);
+  insertIfMissing.run('ministry_website_url', 'https://www.moss.gov.eg');
+  insertIfMissing.run('umbrella_website_url', '');
+  insertIfMissing.run('favicon_url', '/icons/logo-192.png');
   insertIfMissing.run('og_image_url', OFFICIAL_SDG_LOGO);
   insertIfMissing.run('home_logo_url', OFFICIAL_SDG_LOGO);
   insertIfMissing.run('auto_issue_card_on_apply', '1');
+  insertIfMissing.run('site_url', 'https://generation-digital-safe.ai.studio');
+
+  // Ensure site_url never points to temporary preview URLs and remove leftover QA test news
+  db.prepare(
+    "UPDATE settings SET value = 'https://generation-digital-safe.ai.studio' WHERE key = 'site_url' AND (value = '' OR value LIKE '%ais-dev-%' OR value LIKE '%ais-pre-%')"
+  ).run();
+  db.prepare("DELETE FROM news WHERE slug = 'qa-share-search-news-0135'").run();
+
+  // Upgrade default favicon_url from raw JPG to 192x192 PNG for Google Search Site Icon compliance
+  db.prepare("UPDATE settings SET value = '/icons/logo-192.png' WHERE key = 'favicon_url' AND value = ?").run(OFFICIAL_SDG_LOGO);
+
+  // One-time migration: ensure Ministry of Social Solidarity partner entry has official website URL
+  const ministryUrlFlag = db.prepare("SELECT value FROM settings WHERE key = 'migration_ministry_website_v1'").get();
+  if (!ministryUrlFlag) {
+    db.prepare(
+      `UPDATE partners SET website_url = 'https://www.moss.gov.eg'
+       WHERE (name_ar LIKE '%التضامن%' OR partner_type = 'government')
+         AND (website_url IS NULL OR trim(website_url) = '' OR trim(website_url) = '/')`
+    ).run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_ministry_website_v1', '1')").run();
+  }
+
+  // One-time migration: remove/hide official stamp from existing card designs per user request
+  const stampHiddenFlag = db.prepare("SELECT value FROM settings WHERE key = 'migration_card_stamp_hidden_v1'").get();
+  if (!stampHiddenFlag) {
+    db.prepare('UPDATE card_designs SET show_stamp = 0').run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_card_stamp_hidden_v1', '1')").run();
+  }
+
+  db.prepare('UPDATE card_designs SET stamp_url = ? WHERE stamp_url IS NULL').run(OFFICIAL_STAMP_LOGO);
+  db.prepare("UPDATE card_designs SET stamp_position = 'over_signature' WHERE stamp_position IS NULL").run();
+  db.prepare("UPDATE card_designs SET whatsapp_number = '01277714301' WHERE whatsapp_number IS NULL").run();
 
   // Seed initial Brand Logos manager rows if none exist
   const logoCount = (db.prepare('SELECT COUNT(*) as c FROM brand_logos').get() as { c: number }).c;
@@ -677,6 +727,9 @@ function seedInitialData() {
     logo_url: OFFICIAL_SDG_LOGO,
     umbrella_logo_url: OFFICIAL_HEKAYET_LOGO,
     ministry_logo_url: OFFICIAL_MOSS_LOGO,
+    ministry_website_url: 'https://www.moss.gov.eg',
+    umbrella_website_url: '',
+    site_url: 'https://generation-digital-safe.ai.studio',
     auto_issue_card_on_apply: '1',
     hero_image_url: '/src/assets/images/hero_digital_safety_1795097420204.jpg',
     primary_color: '#1d4ed8',

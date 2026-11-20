@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BookOpen, Calendar, CheckCircle2, Copy, Download, ExternalLink, Film, Image as ImageIcon, MapPin, Search, Share2, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
+import { OFFICIAL_SITE_ORIGIN, trackEvent, trackPageView } from '../lib/analytics';
 import type { AlbumItem, EventItem, GalleryItem, LibraryItem, NewsItem } from '../types';
 
 interface NormalizedGalleryItem {
@@ -51,7 +52,9 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
             const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
             const pageTitle = `${d.title_ar} | ${siteTitle}`;
             const pageDesc = (d.excerpt_ar || d.content_ar || d.title_ar || '').replace(/\s+/g, ' ').trim().slice(0, 165);
-            const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+            const rawSiteUrl = (settings.site_url || '').trim().replace(/\/+$/, '');
+            const isInternal = /(localhost|127\.0\.0\.1|ais-dev-|ais-pre-)/i.test(rawSiteUrl);
+            const canonicalOrigin = rawSiteUrl && !isInternal ? rawSiteUrl : OFFICIAL_SITE_ORIGIN;
             const canonicalUrl = `${canonicalOrigin}/news/${encodeURIComponent(d.slug)}`;
             document.title = pageTitle;
             const rawImg = d.share_image_url || d.cover_image || d.logo_url || settings.og_image_url || settings.logo_url || '';
@@ -69,6 +72,7 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
             const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
             if (canonicalEl) canonicalEl.href = canonicalUrl;
             updateMeta('name', 'description', pageDesc);
+            if (d.keywords) updateMeta('name', 'keywords', d.keywords);
             updateMeta('name', 'robots', 'index, follow');
             updateMeta('property', 'og:title', pageTitle);
             updateMeta('property', 'og:description', pageDesc);
@@ -81,6 +85,8 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
               updateMeta('property', 'og:image:secure_url', fullImg);
               updateMeta('name', 'twitter:image', fullImg);
             }
+            trackPageView(`/news/${encodeURIComponent(d.slug)}`, pageTitle);
+            trackEvent('news_view', { article_slug: d.slug, category: d.category || '' });
           }
         });
     } else {
@@ -102,12 +108,16 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
       );
     }
 
-    const shareUrl = window.location.href;
+    const rawSiteUrl = (settings.site_url || '').trim().replace(/\/+$/, '');
+    const isInternalOrigin = /(localhost|127\.0\.0\.1|ais-dev-|ais-pre-)/i.test(rawSiteUrl);
+    const shareOrigin = rawSiteUrl && !isInternalOrigin ? rawSiteUrl : OFFICIAL_SITE_ORIGIN;
+    const shareUrl = `${shareOrigin}/news/${encodeURIComponent(article.slug)}`;
     const shareTitle = article.title_ar;
     const extraGallery = normalizeGallery(article.gallery_json);
 
     const copyLink = () => {
       navigator.clipboard?.writeText(shareUrl);
+      trackEvent('share', { method: 'copy_link', content_type: 'news', item_id: article.slug });
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     };
@@ -203,6 +213,7 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
                     href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => trackEvent('share', { method: 'facebook', content_type: 'news', item_id: article.slug })}
                     className="px-3 py-1.5 text-xs font-semibold bg-blue-700 text-white rounded-lg"
                   >
                     Facebook
@@ -211,6 +222,7 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
                     href={`https://wa.me/?text=${encodeURIComponent(`${shareTitle}\n${shareUrl}`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => trackEvent('share', { method: 'whatsapp', content_type: 'news', item_id: article.slug })}
                     className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg"
                   >
                     WhatsApp
@@ -219,6 +231,7 @@ export const NewsPage: React.FC<{ slug?: string }> = ({ slug }) => {
                     href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareTitle)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => trackEvent('share', { method: 'telegram', content_type: 'news', item_id: article.slug })}
                     className="px-3 py-1.5 text-xs font-semibold bg-sky-600 text-white rounded-lg"
                   >
                     Telegram
@@ -567,6 +580,7 @@ export const NewsAndEventsPage: React.FC = () => {
     });
     const data = await res.json();
     if (res.ok) {
+      trackEvent('event_register', { event_id: selectedEvent.id, source: 'news_and_events' });
       setRegMsg(data.message);
       setRegForm({ full_name: '', email: '', phone: '', governorate: '', notes: '' });
     } else {

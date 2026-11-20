@@ -1,16 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Award, Building2, Calendar, FileText, GraduationCap, ShieldCheck, Users } from 'lucide-react';
 import { apiFetch } from '../../lib/authFetch';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 
 export const AdminOverviewSection: React.FC<{ onJump: (tab: string) => void }> = ({ onJump }) => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState('');
+
+  const loadDashboard = async () => {
+    const r = await apiFetch('/api/admin/dashboard');
+    const d = await r.json();
+    setData(d);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    apiFetch('/api/admin/dashboard')
-      .then((r) => r.json())
-      .then((d) => setData(d))
-      .finally(() => setLoading(false));
+    loadDashboard();
   }, []);
 
   if (loading || !data) {
@@ -31,6 +37,17 @@ export const AdminOverviewSection: React.FC<{ onJump: (tab: string) => void }> =
 
   return (
     <div className="space-y-6">
+      <AdminSectionSaveBar
+        sectionName="نظرة عامة"
+        notice={notice}
+        saveLabel="حفظ وتحديث الإحصائيات"
+        onSave={async () => {
+          await loadDashboard();
+          setNotice('تم تحديث وحفظ ملخص المنصة بنجاح ✓');
+          setTimeout(() => setNotice(''), 3000);
+        }}
+      />
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {kpis.map((k, idx) => {
           const Icon = k.icon;

@@ -1,187 +1,181 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/</loc>
-    <lastmod>2026-11-19</lastmod>
+    <loc>https://generation-digital-safe.ai.studio/</loc>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/about</loc>
-    <lastmod>2026-11-19</lastmod>
+    <loc>https://generation-digital-safe.ai.studio/about</loc>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/goals</loc>
-    <lastmod>2026-11-19</lastmod>
+    <loc>https://generation-digital-safe.ai.studio/goals</loc>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/leadership</loc>
+    <loc>https://generation-digital-safe.ai.studio/leadership</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/committees</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/events</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/news-and-events</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/trainings</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/news</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/projects</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/events</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news-and-events</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/trainings</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/projects</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/gallery</loc>
+    <loc>https://generation-digital-safe.ai.studio/gallery</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/join</loc>
+    <loc>https://generation-digital-safe.ai.studio/join</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://generation-digital-safe.ai.studio/partners</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/partners</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/library</loc>
+    <loc>https://generation-digital-safe.ai.studio/library</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/contact</loc>
-    <lastmod>2026-11-19</lastmod>
+    <loc>https://generation-digital-safe.ai.studio/contact</loc>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/verify</loc>
-    <lastmod>2026-11-19</lastmod>
+    <loc>https://generation-digital-safe.ai.studio/verify</loc>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/human-resources</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/human-resources</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/organization</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/organization</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/training-education</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/training-education</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/technology</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/technology</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/public-relations</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/public-relations</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/media</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/media</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/marketing</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/marketing</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/monitoring-evaluation</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/monitoring-evaluation</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/committees/research-development</loc>
+    <loc>https://generation-digital-safe.ai.studio/committees/research-development</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news/qa-share-search-news-0135</loc>
+    <loc>https://generation-digital-safe.ai.studio/news/youth-ai-and-cybersecurity-bootcamp</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news/youth-ai-and-cybersecurity-bootcamp</loc>
+    <loc>https://generation-digital-safe.ai.studio/news/cyber-safety-and-anti-bullying-campaign</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news/cyber-safety-and-anti-bullying-campaign</loc>
+    <loc>https://generation-digital-safe.ai.studio/news/launch-safe-digital-generation-platform</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/news/launch-safe-digital-generation-platform</loc>
-    <lastmod>2026-11-19</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/events/1</loc>
+    <loc>https://generation-digital-safe.ai.studio/events/1</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ais-dev-h6hz4iaks6zvtwrosutdsq-56870909843.europe-west2.run.app/events/2</loc>
+    <loc>https://generation-digital-safe.ai.studio/events/2</loc>
     <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>

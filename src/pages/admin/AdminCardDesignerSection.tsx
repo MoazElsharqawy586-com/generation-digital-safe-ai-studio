@@ -1,9 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Save, Trash2, Upload } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Award, CheckCircle2, Edit3, Eye, Infinity as InfinityIcon, Plus, RotateCcw, Save, Trash2, Upload, X } from 'lucide-react';
 import { ElectronicCardView, type ExtraCardField } from '../../components/ElectronicCardView';
+import { useApp } from '../../context/AppContext';
 import { uploadAdminFile } from './adminHelpers';
 import { apiFetch } from '../../lib/authFetch';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 import type { CardDesign, CardLogo } from '../../types';
+
+const OFFICIAL_STAMP_URL = '/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png';
 
 function parseExtraFields(raw?: string): ExtraCardField[] {
   if (!raw) return [];
@@ -16,10 +20,27 @@ function parseExtraFields(raw?: string): ExtraCardField[] {
 }
 
 export const AdminCardDesignerSection: React.FC = () => {
+  const { committees } = useApp();
   const [cards, setCards] = useState<any[]>([]);
   const [designs, setDesigns] = useState<CardDesign[]>([]);
   const [logos, setLogos] = useState<CardLogo[]>([]);
   const [activeDesign, setActiveDesign] = useState<CardDesign | null>(null);
+  const [editingCard, setEditingCard] = useState<any>(null);
+  const [editCardForm, setEditCardForm] = useState({
+    card_number: '',
+    issue_date: '',
+    expiry_date: '',
+    no_expiry: false,
+    status: 'active',
+    design_id: 1,
+    full_name: '',
+    position_title: '',
+    national_id_number: '',
+    governorate: '',
+    committee_id: '',
+    avatar_url: ''
+  });
+  const [savingCard, setSavingCard] = useState(false);
   const [partnersLibrary, setPartnersLibrary] = useState<any[]>([]);
   const [newExtraField, setNewExtraField] = useState<ExtraCardField>({ label: '', value: '' });
   const [newLogo, setNewLogo] = useState({
@@ -35,6 +56,24 @@ export const AdminCardDesignerSection: React.FC = () => {
   });
   const [savedMsg, setSavedMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const designDirtyRef = useRef(false);
+
+  // Live preview mode ('latest' | 'president' | 'vp' | 'selected') & Quick Leadership Card Issuance
+  const [previewMode, setPreviewMode] = useState<'latest' | 'president' | 'vp' | 'selected'>('latest');
+  const [selectedCardPreview, setSelectedCardPreview] = useState<any>(null);
+  const [leaderForm, setLeaderForm] = useState({
+    role_type: 'president' as 'president' | 'vice_president',
+    full_name: 'أ. معاذ الشرقاوي',
+    national_id_number: '',
+    governorate: '',
+    email: '',
+    phone: '',
+    avatar_url: '',
+    no_expiry: true,
+    expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  });
+  const [issuingLeader, setIssuingLeader] = useState(false);
+  const [leaderMsg, setLeaderMsg] = useState('');
 
   const load = async () => {
     const [res, pRes] = await Promise.all([apiFetch('/api/admin/cards'), apiFetch('/api/public/partners')]);
@@ -56,7 +95,37 @@ export const AdminCardDesignerSection: React.FC = () => {
     load();
   }, []);
 
+  const persistDesign = async (designToSave: CardDesign, message: string) => {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/admin/card-designs/${designToSave.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(designToSave)
+      });
+      if (res.ok) {
+        const updated = (await res.json()) as CardDesign;
+        setDesigns((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+        setSavedMsg(message);
+        setTimeout(() => setSavedMsg(''), 3000);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!designDirtyRef.current || !activeDesign) return;
+    const snapshot = activeDesign;
+    const timer = setTimeout(() => {
+      designDirtyRef.current = false;
+      persistDesign(snapshot, 'تم حفظ التعديل وتطبيقه تلقائيًا على جميع الكارنيهات ✓');
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [activeDesign]);
+
   const updateDesignField = <K extends keyof CardDesign>(key: K, val: CardDesign[K]) => {
+    designDirtyRef.current = true;
     setActiveDesign((prev) => (prev ? { ...prev, [key]: val } : prev));
   };
 
@@ -77,27 +146,8 @@ export const AdminCardDesignerSection: React.FC = () => {
 
   const saveDesign = async () => {
     if (!activeDesign) return;
-    setSaving(true);
-    try {
-      const res = await apiFetch(`/api/admin/card-designs/${activeDesign.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(activeDesign)
-      });
-      if (res.ok) {
-        const updated = (await res.json()) as CardDesign;
-        setActiveDesign(updated);
-        setSavedMsg('تم حفظ كافة التعديلات على تصميم الكارنيه بنجاح');
-        setTimeout(() => setSavedMsg(''), 3000);
-      }
-      const listRes = await apiFetch('/api/admin/cards');
-      if (listRes.ok) {
-        const data = await listRes.json();
-        setDesigns(data.designs || []);
-      }
-    } finally {
-      setSaving(false);
-    }
+    designDirtyRef.current = false;
+    await persistDesign(activeDesign, 'تم حفظ كافة التعديلات على تصميم الكارنيه وتطبيقها بنجاح ✓');
   };
 
   const addLogo = async (e: React.FormEvent) => {
@@ -125,17 +175,34 @@ export const AdminCardDesignerSection: React.FC = () => {
     }
   };
 
-  const updateLogo = async (logo: CardLogo) => {
+  const updateLogo = async (logo: CardLogo, showFlash = false) => {
     await apiFetch(`/api/admin/card-logos/${logo.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(logo)
     });
+    if (showFlash) {
+      setSavedMsg('تم حفظ تعديل شعار الكارنيه بنجاح ✓');
+      setTimeout(() => setSavedMsg(''), 3000);
+    }
+  };
+
+  const saveAllLogos = async () => {
+    setSaving(true);
+    try {
+      await Promise.all(logos.map((l) => updateLogo(l, false)));
+      setSavedMsg('تم حفظ جميع شعارات الكارنيه بنجاح ✓');
+      setTimeout(() => setSavedMsg(''), 3000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteLogo = async (id: number) => {
     await apiFetch(`/api/admin/card-logos/${id}`, { method: 'DELETE' });
     setLogos((prev) => prev.filter((l) => l.id !== id));
+    setSavedMsg('تم حذف الشعار بنجاح ✓');
+    setTimeout(() => setSavedMsg(''), 3000);
   };
 
   const updateCardStatus = async (id: number, status: string) => {
@@ -157,32 +224,235 @@ export const AdminCardDesignerSection: React.FC = () => {
     load();
   };
 
-  const latestIssued = cards[0];
-  const sampleMember = {
-    full_name: latestIssued?.full_name || 'معاذ محمود فتحي أحمد',
-    member_number: latestIssued?.member_number || '000001',
-    card_number: latestIssued?.card_number || 'CARD-2026-PREVIEW',
-    committee_name: latestIssued?.committee_name || 'لجنة التكنولوجيا',
-    position_title: latestIssued?.position_title || 'عضو عامل',
-    governorate: 'القاهرة',
-    avatar_url: latestIssued?.avatar_url || '',
-    issue_date: latestIssued?.issue_date || '2026-01-01',
-    expiry_date: latestIssued?.expiry_date || '2027-01-01'
+  const makePermanent = async (id: number) => {
+    await apiFetch(`/api/admin/cards/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'active', expiry_date: '' })
+    });
+    load();
   };
+
+  const openEditCard = (c: any) => {
+    setEditingCard(c);
+    setEditCardForm({
+      card_number: c.card_number || '',
+      issue_date: c.issue_date || '',
+      expiry_date: c.expiry_date || '',
+      no_expiry: !c.expiry_date,
+      status: c.status || 'active',
+      design_id: c.design_id || activeDesign?.id || 1,
+      full_name: c.full_name || '',
+      position_title: c.position_title || 'عضو عامل',
+      national_id_number: c.national_id_number || '',
+      governorate: c.governorate || '',
+      committee_id: String(c.committee_id || ''),
+      avatar_url: c.avatar_url || ''
+    });
+  };
+
+  const saveEditedCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCard) return;
+    setSavingCard(true);
+    try {
+      const res = await apiFetch(`/api/admin/cards/${editingCard.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editCardForm,
+          expiry_date: editCardForm.no_expiry ? '' : editCardForm.expiry_date
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setEditingCard(null);
+        if (selectedCardPreview?.id === updated.id) {
+          setSelectedCardPreview(updated);
+        }
+        await load();
+        setSavedMsg(`تم حفظ تعديلات الكارنيه (${updated.card_number}) بنجاح ✓`);
+        setTimeout(() => setSavedMsg(''), 3000);
+      }
+    } finally {
+      setSavingCard(false);
+    }
+  };
+
+  const deleteCard = async (id: number) => {
+    await apiFetch(`/api/admin/cards/${id}`, { method: 'DELETE' });
+    await load();
+    setSavedMsg('تم حذف الكارنيه بنجاح ✓');
+    setTimeout(() => setSavedMsg(''), 3000);
+  };
+
+  const issueLeadershipCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leaderForm.full_name.trim()) return;
+    setIssuingLeader(true);
+    setLeaderMsg('');
+    try {
+      const positionTitle = leaderForm.role_type === 'president' ? 'رئيس المبادرة' : 'نائب رئيس المبادرة';
+      const res = await apiFetch('/api/admin/cards/issue-leadership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: leaderForm.full_name.trim(),
+          position_title: positionTitle,
+          national_id_number: leaderForm.national_id_number.trim(),
+          governorate: leaderForm.governorate.trim(),
+          email: leaderForm.email.trim(),
+          phone: leaderForm.phone.trim(),
+          avatar_url: leaderForm.avatar_url,
+          no_expiry: leaderForm.no_expiry,
+          expiry_date: leaderForm.no_expiry ? '' : leaderForm.expiry_date,
+          design_id: activeDesign?.id || 1
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'تعذر إصدار الكارنيه');
+      if (data.card) {
+        setSelectedCardPreview(data.card);
+        setPreviewMode('selected');
+      }
+      setLeaderMsg(`تم إصدار كارنيه (${positionTitle}) بنجاح لـ ${leaderForm.full_name} ✓`);
+      load();
+    } catch (err: any) {
+      setLeaderMsg(err.message || 'حدث خطأ أثناء الإصدار');
+    } finally {
+      setIssuingLeader(false);
+    }
+  };
+
+  const vpSuggestions = (activeDesign?.vp_names_ar || 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const latestIssued = cards[0];
+  const sampleMember =
+    previewMode === 'selected' && selectedCardPreview
+      ? {
+          full_name: selectedCardPreview.full_name,
+          member_number: selectedCardPreview.member_number,
+          national_id_number: selectedCardPreview.national_id_number || '',
+          card_number: selectedCardPreview.card_number,
+          committee_name: selectedCardPreview.committee_name || (selectedCardPreview.position_title?.includes('رئيس المبادرة') ? 'القيادة العليا' : 'عام'),
+          position_title: selectedCardPreview.position_title || 'عضو عامل',
+          governorate: selectedCardPreview.governorate || '',
+          avatar_url: selectedCardPreview.avatar_url || '',
+          issue_date: selectedCardPreview.issue_date || new Date().toISOString().slice(0, 10),
+          expiry_date: selectedCardPreview.expiry_date || ''
+        }
+      : previewMode === 'president'
+        ? {
+            full_name: activeDesign?.president_name_ar || 'أ. معاذ الشرقاوي',
+            member_number: '000001',
+            national_id_number: '',
+            card_number: 'CARD-PRES-001',
+            committee_name: 'القيادة العليا',
+            position_title: activeDesign?.president_title_ar || 'رئيس المبادرة',
+            governorate: '',
+            avatar_url: '',
+            issue_date: new Date().toISOString().slice(0, 10),
+            expiry_date: ''
+          }
+        : previewMode === 'vp'
+          ? {
+              full_name: vpSuggestions[0] || 'نائب رئيس المبادرة',
+              member_number: '000002',
+              national_id_number: '',
+              card_number: 'CARD-VP-002',
+              committee_name: 'القيادة العليا',
+              position_title: activeDesign?.vp_title_ar || 'نائب رئيس المبادرة',
+              governorate: '',
+              avatar_url: '',
+              issue_date: new Date().toISOString().slice(0, 10),
+              expiry_date: ''
+            }
+          : {
+              full_name: latestIssued?.full_name || 'معاذ محمود فتحي أحمد',
+              member_number: latestIssued?.member_number || '000001',
+              national_id_number: latestIssued?.national_id_number || '',
+              card_number: latestIssued?.card_number || 'CARD-2026-PREVIEW',
+              committee_name: latestIssued?.committee_name || 'لجنة التكنولوجيا',
+              position_title: latestIssued?.position_title || 'عضو عامل',
+              governorate: latestIssued?.governorate || 'القاهرة',
+              avatar_url: latestIssued?.avatar_url || '',
+              issue_date: latestIssued?.issue_date || '2026-01-01',
+              expiry_date: latestIssued ? latestIssued.expiry_date : '2027-01-01'
+            };
 
   return (
     <div className="space-y-8">
+      <AdminSectionSaveBar
+        sectionName="الكارنيهات والشعارات"
+        notice={savedMsg}
+        onSave={async () => {
+          await saveDesign();
+          await saveAllLogos();
+        }}
+        saving={saving}
+        saveLabel="حفظ تصميم وشعارات الكارنيه"
+      />
+
       {/* Live Designer + Controls */}
       {activeDesign && (
         <div className="space-y-6">
           {/* Full-Width Clear Live Preview */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-bold text-slate-950 font-display">
-                معاينة الكارنيه قبل الإصدار (أي تعديل هنا يُطبق فورًا على الكارنيه)
-              </h2>
-              {savedMsg && <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">{savedMsg}</span>}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-950 font-display">
+                  معاينة الكارنيه قبل الإصدار (أي تعديل هنا يُطبق فورًا على جميع الكارنيهات)
+                </h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  مقاس طباعة قياسي CR80 (85.6 × 54 مم) جاهز للقص والتركيب مباشرة داخل جراب الـ ID
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('latest')}
+                  className={`px-3 py-1.5 rounded-lg font-semibold border ${
+                    previewMode === 'latest' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  معاينة عضو
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('president')}
+                  className={`px-3 py-1.5 rounded-lg font-semibold border ${
+                    previewMode === 'president' ? 'bg-blue-700 text-white border-blue-700' : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  رئيس المبادرة (بدون انتهاء)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('vp')}
+                  className={`px-3 py-1.5 rounded-lg font-semibold border ${
+                    previewMode === 'vp' ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  نائب رئيس المبادرة
+                </button>
+                {selectedCardPreview && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('selected')}
+                    className={`px-3 py-1.5 rounded-lg font-semibold border ${
+                      previewMode === 'selected' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-slate-50 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    المختار: {selectedCardPreview.full_name}
+                  </button>
+                )}
+              </div>
             </div>
+
+            {savedMsg && <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg">{savedMsg}</div>}
 
             <div className="flex justify-center py-2">
               <ElectronicCardView member={sampleMember} design={activeDesign} logos={logos} qrDataUrl="" allowDownload={true} />
@@ -302,9 +572,77 @@ export const AdminCardDesignerSection: React.FC = () => {
                 </div>
               </div>
 
+              {/* Official Round Stamp Control */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold text-slate-900">الختم الرسمي على الكارنيه وموضعه</p>
+                  <label className="flex items-center gap-1.5 font-semibold cursor-pointer text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(activeDesign.show_stamp)}
+                      onChange={(e) => updateDesignField('show_stamp', e.target.checked ? 1 : 0)}
+                    />
+                    <span>إظهار الختم الرسمي</span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="w-16 h-16 rounded-full bg-white border-2 border-amber-300 p-1 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
+                    <img
+                      src={activeDesign.stamp_url || OFFICIAL_STAMP_URL}
+                      alt="الختم الرسمي"
+                      className="w-full h-full object-contain rounded-full"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[200px] space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-100 font-semibold">
+                        <Upload className="w-3.5 h-3.5 text-blue-700" />
+                        <span>تغيير / رفع ختم جديد</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const url = await uploadAdminFile(file, 'logos');
+                              updateDesignField('stamp_url', url);
+                              updateDesignField('show_stamp', 1);
+                            }
+                          }}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateDesignField('stamp_url', OFFICIAL_STAMP_URL);
+                          updateDesignField('show_stamp', 1);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-2 border border-slate-300 rounded-lg bg-white hover:bg-slate-100 font-semibold text-slate-700"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> استعادة الختم الرسمي المعتمد
+                      </button>
+                    </div>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">مكان الختم على الكارنيه</span>
+                      <select
+                        value={activeDesign.stamp_position || 'over_signature'}
+                        onChange={(e) => updateDesignField('stamp_position', e.target.value as any)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+                      >
+                        <option value="over_signature">متداخل على طرف الصورة وتوقيع رئيس المبادرة (ختم اعتماد)</option>
+                        <option value="right_bottom">الجهة اليمنى أسفل العبارة</option>
+                        <option value="right_center">الجهة اليمنى أعلى العبارة</option>
+                        <option value="back_left">الوجه الخلفي للكارنيه (أسفل اليسار)</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               {/* Leadership Signatures */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                <p className="font-bold text-slate-900">توقيعات وأسماء القيادة أسفل الكارنيه</p>
+                <p className="font-bold text-slate-900">توقيع رئيس المبادرة (تحت الصورة) وأسماء النواب (الناحية الأخرى)</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <label className="block space-y-1">
@@ -316,17 +654,57 @@ export const AdminCardDesignerSection: React.FC = () => {
                       />
                     </label>
                     <label className="block space-y-1">
-                      <span className="font-semibold text-slate-700">اسم رئيس المبادرة</span>
+                      <span className="font-semibold text-slate-700">اسم رئيس المبادرة (يظهر تحت الصورة)</span>
                       <input
                         value={activeDesign.president_name_ar ?? 'أ. معاذ الشرقاوي'}
                         onChange={(e) => updateDesignField('president_name_ar', e.target.value)}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
                       />
                     </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">نص الإمضاء (تحت اسم الرئيس)</span>
+                      <input
+                        placeholder="مثال: م. الشرقاوي أو يُترك فارغًا للاسم التلقائي"
+                        value={activeDesign.president_signature_text ?? ''}
+                        onChange={(e) => updateDesignField('president_signature_text', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                      />
+                    </label>
+                    <div className="space-y-1">
+                      <span className="font-semibold text-slate-700 block">أو رفع صورة إمضاء/توقيع رئيس المبادرة</span>
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50">
+                          <Upload className="w-3.5 h-3.5 text-blue-700" />
+                          <span>{activeDesign.president_signature_url ? 'تم رفع صورة الإمضاء ✓ (اضغط للتبديل)' : 'رفع صورة التوقيع (PNG/JPG)'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const url = await uploadAdminFile(file, 'logos');
+                                updateDesignField('president_signature_url', url);
+                              }
+                            }}
+                          />
+                        </label>
+                        {activeDesign.president_signature_url && (
+                          <button
+                            type="button"
+                            onClick={() => updateDesignField('president_signature_url', '')}
+                            className="px-2.5 py-2 text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50"
+                            title="حذف صورة الإمضاء"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="block space-y-1">
-                      <span className="font-semibold text-slate-700">المسمى الوظيفي للنواب</span>
+                      <span className="font-semibold text-slate-700">المسمى الوظيفي للنواب (الناحية الأخرى)</span>
                       <input
                         value={activeDesign.vp_title_ar ?? 'نائب رئيس المبادرة'}
                         onChange={(e) => updateDesignField('vp_title_ar', e.target.value)}
@@ -336,7 +714,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                     <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">أسماء النواب (اسم في كل سطر)</span>
                       <textarea
-                        rows={3}
+                        rows={5}
                         value={activeDesign.vp_names_ar ?? 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح'}
                         onChange={(e) => updateDesignField('vp_names_ar', e.target.value)}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
@@ -432,11 +810,21 @@ export const AdminCardDesignerSection: React.FC = () => {
 
           {/* Flexible Card Logos Manager */}
           <div className="xl:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-            <div>
-              <h2 className="text-base font-bold text-slate-950 font-display">نظام إدارة شعارات الكارنيه (الأمام والخلف)</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                أي شعار تضيفه أو تعدله هنا يظهر مباشرةً في أختام الوجه الأمامي أو في بطاقات شركاء الوجه الخلفي.
-              </p>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 className="text-base font-bold text-slate-950 font-display">نظام إدارة شعارات الكارنيه (الأمام والخلف)</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  أي شعار تضيفه أو تعدله هنا يظهر مباشرةً في أختام الوجه الأمامي أو في بطاقات شركاء الوجه الخلفي.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={saveAllLogos}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shrink-0"
+              >
+                <Save className="w-3.5 h-3.5" /> حفظ الشعارات
+              </button>
             </div>
 
             {/* Add Logo Form */}
@@ -473,6 +861,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                   <option value="/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg">شعار مبادرة جيل رقمي آمن</option>
                   <option value="/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg">شعار اتحاد حكاية وطن</option>
                   <option value="/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg">شعار وزارة التضامن الاجتماعي</option>
+                  <option value="/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png">الختم الرسمي — جيل رقمي آمن وحكاية وطن</option>
                   {partnersLibrary.map((p) => (
                     <option key={p.id} value={p.logo_url}>
                       {p.name_ar}
@@ -558,6 +947,9 @@ export const AdminCardDesignerSection: React.FC = () => {
                         />
                         <span>مفعل</span>
                       </label>
+                      <button type="button" onClick={() => updateLogo(l, true)} className="px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-semibold inline-flex items-center gap-1">
+                        <Save className="w-3 h-3" /> حفظ
+                      </button>
                       <button type="button" onClick={() => deleteLogo(l.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -613,7 +1005,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                             const url = await uploadAdminFile(file, 'logos');
                             const updated = { ...l, logo_url: url };
                             setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
-                            updateLogo(updated);
+                            updateLogo(updated, true);
                           }
                         }}
                       />
@@ -627,6 +1019,153 @@ export const AdminCardDesignerSection: React.FC = () => {
         </div>
       )}
 
+      {/* Quick Leadership Card Issuance (President without Expiry + Vice Presidents) */}
+      <div className="bg-white border border-blue-200 rounded-2xl p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-base font-bold text-slate-950 font-display flex items-center gap-2">
+              <Award className="w-4 h-4 text-blue-700" />
+              <span>إصدار كارنيه قيادي سريع (رئيس المبادرة بدون انتهاء / نواب رئيس المبادرة)</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              أصدر كارنيهًا فوريًا لرئيس المبادرة (دائم من غير تاريخ انتهاء) أو لأحد نواب رئيس المبادرة مع حفظ البيانات وطباعة مقاس ID مباشرة.
+            </p>
+          </div>
+          {leaderMsg && (
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {leaderMsg}
+            </span>
+          )}
+        </div>
+
+        <form onSubmit={issueLeadershipCard} className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="sm:col-span-3 space-y-1">
+            <span className="font-semibold text-slate-700 block">الصفة القيادية *</span>
+            <select
+              value={leaderForm.role_type}
+              onChange={(e) => {
+                const role = e.target.value as 'president' | 'vice_president';
+                setLeaderForm((prev) => ({
+                  ...prev,
+                  role_type: role,
+                  full_name:
+                    role === 'president'
+                      ? activeDesign?.president_name_ar || 'أ. معاذ الشرقاوي'
+                      : vpSuggestions[0] || '',
+                  no_expiry: true
+                }));
+              }}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+            >
+              <option value="president">رئيس المبادرة (بدون انتهاء)</option>
+              <option value="vice_president">نائب رئيس المبادرة</option>
+            </select>
+          </div>
+
+          <div className="sm:col-span-4 space-y-1">
+            <span className="font-semibold text-slate-700 block">الاسم الكامل *</span>
+            <input
+              required
+              list="sdg-leader-names"
+              placeholder="الاسم كما سيظهر على الكارنيه"
+              value={leaderForm.full_name}
+              onChange={(e) => setLeaderForm({ ...leaderForm, full_name: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+            />
+            <datalist id="sdg-leader-names">
+              <option value={activeDesign?.president_name_ar || 'أ. معاذ الشرقاوي'} />
+              {vpSuggestions.map((n, i) => (
+                <option key={i} value={n} />
+              ))}
+            </datalist>
+          </div>
+
+          <div className="sm:col-span-3 space-y-1">
+            <span className="font-semibold text-slate-700 block">الرقم القومي (14 رقمًا)</span>
+            <input
+              inputMode="numeric"
+              maxLength={14}
+              placeholder="يظهر تحت الاسم اختياريًا"
+              value={leaderForm.national_id_number}
+              onChange={(e) => setLeaderForm({ ...leaderForm, national_id_number: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+            />
+          </div>
+
+          <div className="sm:col-span-2 space-y-1">
+            <span className="font-semibold text-slate-700 block">الصورة الشخصية</span>
+            <label className="flex items-center justify-center gap-1 px-2.5 py-2 border border-dashed border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50">
+              <Upload className="w-3.5 h-3.5 text-blue-700" />
+              <span>{leaderForm.avatar_url ? 'تم الرفع ✓' : 'رفع صورة'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setLeaderForm({ ...leaderForm, avatar_url: await uploadAdminFile(file, 'avatars') });
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="sm:col-span-3 space-y-1">
+            <span className="font-semibold text-slate-700 block">المحافظة / النطاق</span>
+            <input
+              placeholder="مثال: القيادة المركزية / القاهرة"
+              value={leaderForm.governorate}
+              onChange={(e) => setLeaderForm({ ...leaderForm, governorate: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+            />
+          </div>
+
+          <div className="sm:col-span-3 space-y-1">
+            <span className="font-semibold text-slate-700 block">رقم الهاتف (اختياري)</span>
+            <input
+              placeholder="01xxxxxxxxx"
+              value={leaderForm.phone}
+              onChange={(e) => setLeaderForm({ ...leaderForm, phone: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+            />
+          </div>
+
+          <div className="sm:col-span-3 flex flex-col justify-end">
+            <label className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg cursor-pointer font-semibold text-slate-800">
+              <input
+                type="checkbox"
+                checked={leaderForm.no_expiry}
+                onChange={(e) => setLeaderForm({ ...leaderForm, no_expiry: e.target.checked })}
+              />
+              <InfinityIcon className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+              <span>بدون تاريخ انتهاء (دائم)</span>
+            </label>
+          </div>
+
+          {!leaderForm.no_expiry && (
+            <div className="sm:col-span-3 space-y-1">
+              <span className="font-semibold text-slate-700 block">تاريخ الانتهاء</span>
+              <input
+                type="date"
+                value={leaderForm.expiry_date}
+                onChange={(e) => setLeaderForm({ ...leaderForm, expiry_date: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+              />
+            </div>
+          )}
+
+          <div className={`${leaderForm.no_expiry ? 'sm:col-span-3' : 'sm:col-span-12'} flex items-end justify-end`}>
+            <button
+              type="submit"
+              disabled={issuingLeader}
+              className="w-full sm:w-auto px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{issuingLeader ? 'جارٍ الإصدار...' : 'إصدار الكارنيه ومعاينته الآن'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
       {/* Issued Membership Cards Table */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
         <h3 className="text-base font-bold text-slate-950 font-display">الكارنيهات الإلكترونية الصادرة ({cards.length})</h3>
@@ -635,7 +1174,7 @@ export const AdminCardDesignerSection: React.FC = () => {
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
               <tr>
                 <th className="py-2.5 px-3 text-start">رقم الكارنيه</th>
-                <th className="py-2.5 px-3 text-start">العضو</th>
+                <th className="py-2.5 px-3 text-start">العضو / المنصب</th>
                 <th className="py-2.5 px-3 text-start">اللجنة</th>
                 <th className="py-2.5 px-3 text-start">الإصدار / الانتهاء</th>
                 <th className="py-2.5 px-3 text-start">الحالة</th>
@@ -646,25 +1185,54 @@ export const AdminCardDesignerSection: React.FC = () => {
               {cards.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-6 text-center text-slate-500">
-                    لم تُصدر كارنيهات بعد. عند قبول طلب عضوية أو الضغط على إصدار كارنيه لعضو سيظهر هنا.
+                    لم تُصدر كارنيهات بعد. عند قبول طلب عضوية أو الضغط على إصدار كارنيه قيادي أو لعضو سيظهر هنا.
                   </td>
                 </tr>
               ) : (
                 cards.map((c) => (
                   <tr key={c.id}>
                     <td className="py-2.5 px-3 font-mono-num font-bold text-blue-700">{c.card_number}</td>
-                    <td className="py-2.5 px-3 font-semibold">{c.full_name}</td>
+                    <td className="py-2.5 px-3">
+                      <p className="font-semibold text-slate-900">{c.full_name}</p>
+                      <p className="text-[11px] text-slate-500">{c.position_title || 'عضو عامل'}</p>
+                    </td>
                     <td className="py-2.5 px-3">{c.committee_name || 'عام'}</td>
                     <td className="py-2.5 px-3 font-mono-num">
-                      {c.issue_date} → {c.expiry_date || '-'}
+                      {c.issue_date} →{' '}
+                      {c.expiry_date ? (
+                        c.expiry_date
+                      ) : (
+                        <span className="font-sans font-bold text-emerald-700">دائم (بدون انتهاء)</span>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 font-semibold">{c.status === 'active' ? 'ساري' : 'موقوف'}</td>
-                    <td className="py-2.5 px-3 flex items-center gap-2">
+                    <td className="py-2.5 px-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCardPreview(c);
+                          setPreviewMode('selected');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="inline-flex items-center gap-1 text-indigo-700 font-semibold hover:underline"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> معاينة/طباعة
+                      </button>
                       <a href={`/verify?card=${c.card_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">
-                        معاينة/تحميل
+                        رابط التحقق
                       </a>
-                      <button type="button" onClick={() => renewCard(c.id)} className="text-emerald-700 hover:underline">
+                      <button type="button" onClick={() => makePermanent(c.id)} className="text-emerald-700 font-semibold hover:underline">
+                        بدون انتهاء
+                      </button>
+                      <button type="button" onClick={() => renewCard(c.id)} className="text-cyan-700 hover:underline">
                         تجديد عام
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditCard(c)}
+                        className="inline-flex items-center gap-1 text-blue-700 font-semibold hover:underline"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> تعديل بيانات
                       </button>
                       <button
                         type="button"
@@ -672,6 +1240,13 @@ export const AdminCardDesignerSection: React.FC = () => {
                         className="text-amber-700 hover:underline"
                       >
                         {c.status === 'active' ? 'إيقاف' : 'تفعيل'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteCard(c.id)}
+                        className="text-red-600 hover:underline"
+                      >
+                        حذف
                       </button>
                     </td>
                   </tr>
@@ -681,6 +1256,150 @@ export const AdminCardDesignerSection: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Edit Issued Card & Cardholder Data Modal */}
+      {editingCard && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200 max-h-[90vh] overflow-y-auto text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold font-display text-slate-950">تعديل بيانات الكارنيه: {editingCard.card_number}</h3>
+              <button type="button" onClick={() => setEditingCard(null)}>
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={saveEditedCard} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">الاسم الكامل على الكارنيه *</span>
+                  <input
+                    required
+                    value={editCardForm.full_name}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">الصفة / المنصب *</span>
+                  <input
+                    required
+                    value={editCardForm.position_title}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, position_title: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">رقم الكارنيه *</span>
+                  <input
+                    required
+                    value={editCardForm.card_number}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, card_number: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">الرقم القومي</span>
+                  <input
+                    inputMode="numeric"
+                    maxLength={14}
+                    value={editCardForm.national_id_number}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, national_id_number: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">اللجنة</span>
+                  <select
+                    value={editCardForm.committee_id}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, committee_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    <option value="">-- عام / قيادة --</option>
+                    {committees.map((cm) => (
+                      <option key={cm.id} value={cm.id}>{cm.name_ar}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">المحافظة</span>
+                  <input
+                    value={editCardForm.governorate}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, governorate: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">تاريخ الإصدار</span>
+                  <input
+                    type="date"
+                    value={editCardForm.issue_date}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, issue_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">حالة الكارنيه</span>
+                  <select
+                    value={editCardForm.status}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    <option value="active">ساري</option>
+                    <option value="suspended">موقوف</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-1">
+                <label className="flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editCardForm.no_expiry}
+                    onChange={(e) =>
+                      setEditCardForm({
+                        ...editCardForm,
+                        no_expiry: e.target.checked,
+                        expiry_date: e.target.checked ? '' : editCardForm.expiry_date
+                      })
+                    }
+                  />
+                  <span>دائم بدون تاريخ انتهاء</span>
+                </label>
+                {!editCardForm.no_expiry && (
+                  <input
+                    type="date"
+                    value={editCardForm.expiry_date}
+                    onChange={(e) => setEditCardForm({ ...editCardForm, expiry_date: e.target.value })}
+                    className="px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                )}
+              </div>
+
+              <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg py-2 cursor-pointer hover:bg-slate-50">
+                <Upload className="w-4 h-4 text-blue-700" />
+                <span>{editCardForm.avatar_url ? 'تغيير الصورة الشخصية على الكارنيه ✓' : 'رفع صورة شخصية'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setEditCardForm({ ...editCardForm, avatar_url: await uploadAdminFile(f, 'avatars') });
+                  }}
+                />
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditingCard(null)} className="px-4 py-2 border border-slate-300 rounded-xl font-semibold">
+                  إلغاء
+                </button>
+                <button type="submit" disabled={savingCard} className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-semibold inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <Save className="w-4 h-4" /> {savingCard ? 'جارٍ الحفظ...' : 'حفظ تعديلات الكارنيه'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Edit3, Image as ImageIcon, Plus, Save, Star, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle2, Edit3, ExternalLink, Globe, Image as ImageIcon, Plus, Save, Star, Trash2, Upload, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { uploadAdminFile } from './adminHelpers';
+import { AdminSectionSaveBar } from './AdminSectionSaveBar';
 import { apiFetch } from '../../lib/authFetch';
+import { normalizeExternalUrl } from '../../lib/url';
 
 interface LinkedEntities {
   news: { id: number; title_ar: string }[];
@@ -18,7 +20,8 @@ export const AdminMediaLibraryTab: React.FC = () => {
     entities: { news: [], projects: [], events: [] }
   });
   const [library, setLibrary] = useState<any[]>([]);
-  const [albumForm, setAlbumForm] = useState({ title_ar: '', category: 'events' });
+  const [albumForm, setAlbumForm] = useState({ title_ar: '', category: 'events', description_ar: '' });
+  const [editingAlbum, setEditingAlbum] = useState<any | null>(null);
   const [mediaForm, setMediaForm] = useState({
     album_id: '',
     media_type: 'image',
@@ -32,6 +35,7 @@ export const AdminMediaLibraryTab: React.FC = () => {
   });
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [libForm, setLibForm] = useState({ title_ar: '', category: 'pdf_guide', description_ar: '', file_url: '', external_url: '' });
+  const [editingLib, setEditingLib] = useState<any | null>(null);
   const [notice, setNotice] = useState('');
 
   const load = async () => {
@@ -86,12 +90,16 @@ export const AdminMediaLibraryTab: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {notice && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{notice}</span>
-        </div>
-      )}
+      <AdminSectionSaveBar
+        sectionName="المعرض والمكتبة الرقمية"
+        notice={notice}
+        saveLabel="حفظ وتحديث المعرض والمكتبة"
+        onSave={async () => {
+          await load();
+          await refreshBootstrap();
+          flashNotice('تم حفظ كافة التغييرات وتحديث المعرض والمكتبة الرقمية ✓');
+        }}
+      />
 
       {/* Albums & Unified Media Manager */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
@@ -102,7 +110,7 @@ export const AdminMediaLibraryTab: React.FC = () => {
               <span>إدارة صور الأخبار والمبادرات وألبومات المعرض</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              ارفع صورًا من الهاتف أو الكمبيوتر، عدّل النصوص البديلة والوصف، اربط الصورة بأي خبر أو مبادرة أو فعالية، وعيّنها كصورة رئيسية بضغطة واحدة.
+              ارفع صورًا من الهاتف أو الكمبيوتر، عدّل النصوص البديلة والوصف والألبومات، واربط الصورة بأي خبر أو مبادرة أو فعالية.
             </p>
           </div>
         </div>
@@ -112,8 +120,8 @@ export const AdminMediaLibraryTab: React.FC = () => {
             onSubmit={async (e) => {
               e.preventDefault();
               await apiFetch('/api/admin/albums', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(albumForm) });
-              setAlbumForm({ title_ar: '', category: 'events' });
-              flashNotice('تم إنشاء الألبوم ✓');
+              setAlbumForm({ title_ar: '', category: 'events', description_ar: '' });
+              flashNotice('تم إنشاء وحفظ الألبوم ✓');
               load();
             }}
             className="lg:col-span-4 bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3"
@@ -125,7 +133,10 @@ export const AdminMediaLibraryTab: React.FC = () => {
               <option value="workshops">صور الورش</option>
               <option value="participation">صور المشاركات</option>
             </select>
-            <button type="submit" className="w-full px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold">إنشاء ألبوم</button>
+            <input placeholder="وصف مختصر (اختياري)" value={albumForm.description_ar} onChange={(e) => setAlbumForm({ ...albumForm, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+            <button type="submit" className="w-full px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold inline-flex items-center justify-center gap-1.5">
+              <Save className="w-3.5 h-3.5" /> حفظ وإنشاء ألبوم
+            </button>
           </form>
 
           <form
@@ -151,7 +162,7 @@ export const AdminMediaLibraryTab: React.FC = () => {
                 entity_type: 'none',
                 entity_id: ''
               });
-              flashNotice('تمت إضافة الوسائط إلى قاعدة البيانات ✓');
+              flashNotice('تم حفظ وإضافة الوسائط إلى قاعدة البيانات ✓');
               load();
             }}
             className="lg:col-span-8 bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3"
@@ -203,11 +214,84 @@ export const AdminMediaLibraryTab: React.FC = () => {
               <input required placeholder="أو أدخل رابط الصورة / الفيديو مباشرة" value={mediaForm.url} onChange={(e) => setMediaForm({ ...mediaForm, url: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white" />
             </div>
 
-            <button type="submit" disabled={!mediaForm.url} className="px-5 py-2 bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50">
-              حفظ وإضافة للمعرض
+            <button type="submit" disabled={!mediaForm.url} className="inline-flex items-center gap-1.5 px-5 py-2 bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50">
+              <Save className="w-3.5 h-3.5" /> حفظ وإضافة للمعرض
             </button>
           </form>
         </div>
+
+        {/* Albums List (Edit / Delete) */}
+        {media.albums.length > 0 && (
+          <div className="space-y-2 text-xs">
+            <p className="font-bold text-slate-900">الألبومات الحالية ({media.albums.length})</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {media.albums.map((alb) => (
+                <div key={alb.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50/70 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 truncate">{alb.title_ar}</p>
+                    <p className="text-[11px] text-slate-500">{alb.category}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setEditingAlbum({ ...alb })}
+                      className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 bg-white rounded-md font-semibold text-blue-700 hover:border-blue-400"
+                    >
+                      <Edit3 className="w-3 h-3" /> تعديل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await apiFetch(`/api/admin/albums/${alb.id}`, { method: 'DELETE' });
+                        flashNotice('تم حذف الألبوم وحفظ التغييرات ✓');
+                        load();
+                      }}
+                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                      title="حذف الألبوم"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Edit Album Inline Card */}
+        {editingAlbum && (
+          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-slate-950">تعديل بيانات الألبوم: {editingAlbum.title_ar}</h4>
+              <button type="button" onClick={() => setEditingAlbum(null)}><X className="w-4 h-4 text-slate-500" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input value={editingAlbum.title_ar || ''} onChange={(e) => setEditingAlbum({ ...editingAlbum, title_ar: e.target.value })} placeholder="اسم الألبوم" className="px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+              <select value={editingAlbum.category || 'events'} onChange={(e) => setEditingAlbum({ ...editingAlbum, category: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                <option value="events">صور الفعاليات</option>
+                <option value="workshops">صور الورش</option>
+                <option value="participation">صور المشاركات</option>
+              </select>
+              <input value={editingAlbum.description_ar || ''} onChange={(e) => setEditingAlbum({ ...editingAlbum, description_ar: e.target.value })} placeholder="وصف الألبوم" className="px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await apiFetch(`/api/admin/albums/${editingAlbum.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(editingAlbum)
+                });
+                setEditingAlbum(null);
+                flashNotice('تم حفظ تعديلات الألبوم بنجاح ✓');
+                load();
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 text-white rounded-lg font-semibold"
+            >
+              <Save className="w-3.5 h-3.5" /> حفظ تعديلات الألبوم
+            </button>
+          </div>
+        )}
 
         {/* Media Edit Modal */}
         {editingItem && (
@@ -270,7 +354,7 @@ export const AdminMediaLibraryTab: React.FC = () => {
                         })
                       });
                       setEditingItem(null);
-                      flashNotice('تم تحديث بيانات الصورة ✓');
+                      flashNotice('تم حفظ وتحديث بيانات الصورة ✓');
                       load();
                     }}
                     className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 text-white rounded-lg font-semibold"
@@ -333,6 +417,7 @@ export const AdminMediaLibraryTab: React.FC = () => {
                     type="button"
                     onClick={async () => {
                       await apiFetch(`/api/admin/gallery/${item.id}`, { method: 'DELETE' });
+                      flashNotice('تم حذف العنصر وحفظ التغييرات ✓');
                       load();
                     }}
                     className="text-red-600 p-1 hover:bg-red-50 rounded"
@@ -349,12 +434,26 @@ export const AdminMediaLibraryTab: React.FC = () => {
 
       {/* Digital Library */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-        <h3 className="text-base font-bold text-slate-950 font-display">إدارة المكتبة الرقمية</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-base font-bold text-slate-950 font-display">إدارة المكتبة الرقمية ({library.length})</h3>
+          <button
+            type="button"
+            onClick={async () => {
+              await load();
+              flashNotice('تم حفظ بيانات المكتبة الرقمية بنجاح ✓');
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
+          >
+            <Save className="w-3.5 h-3.5" /> حفظ المكتبة
+          </button>
+        </div>
+
         <form
           onSubmit={async (e) => {
             e.preventDefault();
             await apiFetch('/api/admin/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(libForm) });
             setLibForm({ title_ar: '', category: 'pdf_guide', description_ar: '', file_url: '', external_url: '' });
+            flashNotice('تم حفظ وإضافة العنصر إلى المكتبة الرقمية ✓');
             load();
           }}
           className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"
@@ -376,20 +475,92 @@ export const AdminMediaLibraryTab: React.FC = () => {
             <input type="file" accept=".pdf" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setLibForm({ ...libForm, file_url: await uploadAdminFile(f, 'documents') }); }} />
           </label>
           <textarea rows={2} placeholder="وصف مختصر" value={libForm.description_ar} onChange={(e) => setLibForm({ ...libForm, description_ar: e.target.value })} className="sm:col-span-2 px-3 py-2 border border-slate-300 rounded-lg bg-white" />
-          <button type="submit" className="sm:col-span-2 py-2 bg-blue-700 text-white rounded-lg font-semibold">إضافة للمكتبة</button>
+          <button type="submit" className="sm:col-span-2 py-2 bg-blue-700 text-white rounded-lg font-semibold inline-flex items-center justify-center gap-1.5">
+            <Save className="w-3.5 h-3.5" /> حفظ وإضافة للمكتبة
+          </button>
         </form>
 
         <div className="divide-y divide-slate-100 text-xs">
           {library.map((item) => (
             <div key={item.id} className="py-2.5 flex items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <p className="font-bold text-slate-900">{item.title_ar}</p>
                 <p className="text-slate-500">{item.category} · {item.downloads_count} تحميل</p>
               </div>
-              <button type="button" onClick={async () => { await apiFetch(`/api/admin/library/${item.id}`, { method: 'DELETE' }); load(); }} className="text-red-600"><Trash2 className="w-4 h-4" /></button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditingLib({ ...item, is_published: item.is_published !== 0 })}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 border border-slate-300 rounded-md font-semibold text-blue-700 hover:border-blue-400"
+                >
+                  <Edit3 className="w-3 h-3" /> تعديل
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await apiFetch(`/api/admin/library/${item.id}`, { method: 'DELETE' });
+                    flashNotice('تم حذف العنصر من المكتبة وحفظ التغييرات ✓');
+                    load();
+                  }}
+                  className="text-red-600 p-1 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
+
+        {/* Edit Digital Library Modal */}
+        {editingLib && (
+          <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200 text-xs">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-950 font-display">تعديل عنصر المكتبة الرقمية</h3>
+                <button type="button" onClick={() => setEditingLib(null)}><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await apiFetch(`/api/admin/library/${editingLib.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(editingLib)
+                  });
+                  setEditingLib(null);
+                  flashNotice('تم حفظ تعديلات المكتبة الرقمية ✓');
+                  load();
+                }}
+                className="space-y-3"
+              >
+                <input required placeholder="عنوان الملف / الدليل" value={editingLib.title_ar || ''} onChange={(e) => setEditingLib({ ...editingLib, title_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <select value={editingLib.category || 'pdf_guide'} onChange={(e) => setEditingLib({ ...editingLib, category: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                  <option value="pdf_guide">ملفات PDF</option>
+                  <option value="awareness_kit">أدلة توعوية</option>
+                  <option value="training_material">مواد تدريبية</option>
+                  <option value="ebook">كتب إلكترونية</option>
+                  <option value="useful_link">روابط مفيدة</option>
+                  <option value="educational_video">فيديوهات تعليمية</option>
+                  <option value="security_tool">أدوات الأمن الرقمي</option>
+                </select>
+                <input placeholder="رابط خارجي" value={editingLib.external_url || ''} onChange={(e) => setEditingLib({ ...editingLib, external_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <label className="flex items-center justify-center gap-1.5 border border-dashed border-slate-300 rounded-lg cursor-pointer py-2">
+                  <Upload className="w-3.5 h-3.5 text-blue-700" />
+                  <span>{editingLib.file_url ? 'استبدال ملف PDF ✓' : 'رفع ملف PDF'}</span>
+                  <input type="file" accept=".pdf" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setEditingLib({ ...editingLib, file_url: await uploadAdminFile(f, 'documents') }); }} />
+                </label>
+                <textarea rows={2} placeholder="الوصف" value={editingLib.description_ar || ''} onChange={(e) => setEditingLib({ ...editingLib, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <label className="flex items-center gap-2 font-semibold">
+                  <input type="checkbox" checked={Boolean(editingLib.is_published)} onChange={(e) => setEditingLib({ ...editingLib, is_published: e.target.checked })} />
+                  <span>منشور للجمهور</span>
+                </label>
+                <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                  <Save className="w-4 h-4" /> حفظ التعديلات
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -399,17 +570,35 @@ export const AdminCertificatesTab: React.FC = () => {
   const [certs, setCerts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ recipient_name: '', recipient_email: '', course_title: '', issue_date: new Date().toISOString().slice(0, 10), trainer_name: 'لجنة التدريب والتثقيف' });
+  const [editingCert, setEditingCert] = useState<any | null>(null);
+  const [notice, setNotice] = useState('');
+
+  const flashNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   const load = () => apiFetch(`/api/admin/certificates?search=${encodeURIComponent(search)}`).then((r) => r.json()).then((d) => setCerts(Array.isArray(d) ? d : []));
   useEffect(() => { load(); }, []);
 
   return (
     <div className="space-y-6">
+      <AdminSectionSaveBar
+        sectionName="الشهادات الإلكترونية"
+        notice={notice}
+        saveLabel="حفظ وتحديث الشهادات"
+        onSave={async () => {
+          await load();
+          flashNotice('تم حفظ سجل الشهادات الإلكترونية بنجاح ✓');
+        }}
+      />
+
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           await apiFetch('/api/admin/certificates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
           setForm({ recipient_name: '', recipient_email: '', course_title: '', issue_date: new Date().toISOString().slice(0, 10), trainer_name: 'لجنة التدريب والتثقيف' });
+          flashNotice('تم حفظ وإصدار الشهادة الإلكترونية بنجاح ✓');
           load();
         }}
         className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 text-xs"
@@ -422,7 +611,7 @@ export const AdminCertificatesTab: React.FC = () => {
           <input type="date" value={form.issue_date} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
           <input placeholder="المدرب / الجهة المانحة" value={form.trainer_name} onChange={(e) => setForm({ ...form, trainer_name: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
           <button type="submit" className="px-4 py-2 bg-blue-700 text-white rounded-lg font-semibold inline-flex items-center justify-center gap-1.5">
-            <Plus className="w-4 h-4" /> إصدار الشهادة
+            <Save className="w-4 h-4" /> حفظ وإصدار الشهادة
           </button>
         </div>
       </form>
@@ -455,8 +644,15 @@ export const AdminCertificatesTab: React.FC = () => {
                   <td className="py-2 px-3">{c.course_title}</td>
                   <td className="py-2 px-3 font-mono-num">{c.issue_date}</td>
                   <td className="py-2 px-3 font-semibold">{c.status === 'valid' ? 'سارية' : 'ملغاة'}</td>
-                  <td className="py-2 px-3 flex gap-2">
+                  <td className="py-2 px-3 flex flex-wrap gap-2">
                     <a href={`/verify?cert=${c.certificate_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">عرض / PDF</a>
+                    <button
+                      type="button"
+                      onClick={() => setEditingCert({ ...c })}
+                      className="text-indigo-700 font-semibold hover:underline"
+                    >
+                      تعديل
+                    </button>
                     <button
                       type="button"
                       onClick={async () => {
@@ -465,13 +661,24 @@ export const AdminCertificatesTab: React.FC = () => {
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ status: c.status === 'valid' ? 'revoked' : 'valid' })
                         });
+                        flashNotice('تم تحديث وحفظ حالة الشهادة ✓');
                         load();
                       }}
                       className="text-amber-700 hover:underline"
                     >
                       {c.status === 'valid' ? 'إلغاء' : 'تفعيل'}
                     </button>
-                    <button type="button" onClick={async () => { await apiFetch(`/api/admin/certificates/${c.id}`, { method: 'DELETE' }); load(); }} className="text-red-600 hover:underline">حذف</button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await apiFetch(`/api/admin/certificates/${c.id}`, { method: 'DELETE' });
+                        flashNotice('تم حذف الشهادة وحفظ التغييرات ✓');
+                        load();
+                      }}
+                      className="text-red-600 hover:underline"
+                    >
+                      حذف
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -479,6 +686,45 @@ export const AdminCertificatesTab: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Edit Certificate Modal */}
+      {editingCert && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 text-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-950 font-display">تعديل بيانات الشهادة ({editingCert.certificate_number})</h3>
+              <button type="button" onClick={() => setEditingCert(null)}><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await apiFetch(`/api/admin/certificates/${editingCert.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(editingCert)
+                });
+                setEditingCert(null);
+                flashNotice('تم حفظ تعديلات الشهادة بنجاح ✓');
+                load();
+              }}
+              className="space-y-3"
+            >
+              <input required placeholder="اسم المستفيد" value={editingCert.recipient_name || ''} onChange={(e) => setEditingCert({ ...editingCert, recipient_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <input placeholder="البريد الإلكتروني" value={editingCert.recipient_email || ''} onChange={(e) => setEditingCert({ ...editingCert, recipient_email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <input required placeholder="اسم الدورة / المشاركة" value={editingCert.course_title || ''} onChange={(e) => setEditingCert({ ...editingCert, course_title: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <input type="date" value={editingCert.issue_date || ''} onChange={(e) => setEditingCert({ ...editingCert, issue_date: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <input placeholder="المدرب / الجهة المانحة" value={editingCert.trainer_name || ''} onChange={(e) => setEditingCert({ ...editingCert, trainer_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <select value={editingCert.status || 'valid'} onChange={(e) => setEditingCert({ ...editingCert, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                <option value="valid">سارية</option>
+                <option value="revoked">ملغاة</option>
+              </select>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ التعديلات
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -502,6 +748,13 @@ export const AdminPartnersTab: React.FC = () => {
     show_in_marquee: true,
     marquee_order: 10
   });
+  const [editingPartner, setEditingPartner] = useState<any | null>(null);
+  const [notice, setNotice] = useState('');
+
+  const flashNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3200);
+  };
 
   const load = () => apiFetch('/api/admin/partners').then((r) => r.json()).then((d) => setPartners(Array.isArray(d) ? d : []));
   useEffect(() => { load(); }, []);
@@ -512,11 +765,47 @@ export const AdminPartnersTab: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(marquee)
     });
+    await refreshBootstrap();
+    flashNotice('تم حفظ إعدادات الشريط المتحرك والشركاء بنجاح ✓');
+  };
+
+  const saveEditPartner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPartner) return;
+    await apiFetch(`/api/admin/partners/${editingPartner.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name_ar: editingPartner.name_ar,
+        name_en: editingPartner.name_en,
+        partner_type: editingPartner.partner_type,
+        description_ar: editingPartner.description_ar,
+        description_en: editingPartner.description_en,
+        logo_url: editingPartner.logo_url,
+        website_url: editingPartner.website_url,
+        marquee_order: Number(editingPartner.marquee_order ?? 10),
+        show_in_marquee: Boolean(editingPartner.show_in_marquee),
+        is_visible: Boolean(editingPartner.is_visible)
+      })
+    });
+    setEditingPartner(null);
+    flashNotice('تم حفظ تعديلات بيانات الشريك وموقعه الإلكتروني بنجاح ✓');
+    load();
     refreshBootstrap();
   };
 
   return (
     <div className="space-y-6">
+      <AdminSectionSaveBar
+        sectionName="الشركاء والشريط المتحرك"
+        notice={notice}
+        saveLabel="حفظ جميع التغييرات"
+        onSave={async () => {
+          await saveMarquee();
+          await load();
+        }}
+      />
+
       {/* Marquee Controls */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -557,27 +846,37 @@ export const AdminPartnersTab: React.FC = () => {
           e.preventDefault();
           await apiFetch('/api/admin/partners', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
           setForm({ name_ar: '', name_en: '', partner_type: 'partner', description_ar: '', logo_url: '', website_url: '', show_in_marquee: true, marquee_order: 10 });
+          flashNotice('تم حفظ وإضافة الشريك وموقعه الإلكتروني بنجاح ✓');
           load();
           refreshBootstrap();
         }}
         className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 text-xs"
       >
-        <h3 className="text-base font-bold text-slate-950 font-display">إضافة جهة / شركة / شريك / داعم جديد</h3>
+        <div>
+          <h3 className="text-base font-bold text-slate-950 font-display">إضافة جهة / وزارة / شركة / شريك / داعم جديد</h3>
+          <p className="text-slate-500 mt-0.5">
+            أضف اسم الجهة ورابط موقعها الإلكتروني (اختياري) ليتمكن الزوار من متابعة موقع الشريك أو الوزارة عند الضغط على شعاره.
+          </p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <input required placeholder="اسم الجهة بالعربية" value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
-          <select value={form.partner_type} onChange={(e) => setForm({ ...form, partner_type: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
+          <input required placeholder="اسم الجهة بالعربية *" value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+          <input placeholder="الاسم بالإنجليزية (اختياري)" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+          <select value={form.partner_type} onChange={(e) => setForm({ ...form, partner_type: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
             <option value="partner">شريك استراتيجي</option>
             <option value="corporate">شركة</option>
             <option value="civil_society">مؤسسة / جمعية</option>
-            <option value="government">جهة حكومية</option>
+            <option value="government">وزارة / جهة حكومية</option>
             <option value="academic">جهة تعليمية</option>
             <option value="supporter">داعم</option>
           </select>
-          <input placeholder="رابط الموقع الرسمي" value={form.website_url} onChange={(e) => setForm({ ...form, website_url: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
           <input type="number" placeholder="ترتيب الظهور" value={form.marquee_order} onChange={(e) => setForm({ ...form, marquee_order: Number(e.target.value) })} className="px-3 py-2 border border-slate-300 rounded-lg" />
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input dir="ltr" placeholder="رابط الموقع الإلكتروني للشريك (مثال: https://www.moss.gov.eg)" value={form.website_url} onChange={(e) => setForm({ ...form, website_url: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+          <input placeholder="نبذة مختصرة عن الشريك ودوره (اختياري)" value={form.description_ar} onChange={(e) => setForm({ ...form, description_ar: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-          <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg py-2.5 cursor-pointer">
+          <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg py-2.5 cursor-pointer hover:bg-slate-50">
             <Upload className="w-4 h-4 text-blue-700" />
             <span>{form.logo_url ? 'تم رفع الشعار ✓' : 'رفع شعار الجهة *'}</span>
             <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setForm({ ...form, logo_url: await uploadAdminFile(f, 'logos') }); }} />
@@ -587,68 +886,177 @@ export const AdminPartnersTab: React.FC = () => {
             <span>إظهار الشعار تلقائيًا في الشريط المتحرك</span>
           </label>
         </div>
-        <button type="submit" disabled={!form.logo_url} className="px-5 py-2 bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50">
-          إضافة الشريك
+        <button type="submit" disabled={!form.logo_url} className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-semibold disabled:opacity-50">
+          <Save className="w-4 h-4" /> حفظ وإضافة الشريك
         </button>
       </form>
 
       {/* Partners List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {partners.map((p) => (
-          <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3 min-w-0">
-              <img src={p.logo_url} alt={p.name_ar} className="w-12 h-12 object-contain border border-slate-100 rounded-lg p-1 shrink-0" />
-              <div className="min-w-0">
-                <p className="font-bold text-slate-900 truncate">{p.name_ar}</p>
-                <p className="text-slate-500">ترتيب: {p.marquee_order} · {p.show_in_marquee ? 'ظاهر بالشريط' : 'مخفي من الشريط'}</p>
+        {partners.map((p) => {
+          const siteUrl = normalizeExternalUrl(p.website_url);
+          return (
+            <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between gap-3 text-xs">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img src={p.logo_url} alt={p.name_ar} className="w-12 h-12 object-contain border border-slate-100 rounded-lg p-1 shrink-0 bg-white" />
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="font-bold text-slate-900 truncate">{p.name_ar}</p>
+                    <p className="text-slate-500">ترتيب: {p.marquee_order} · {p.show_in_marquee ? 'ظاهر بالشريط' : 'مخفي من الشريط'}</p>
+                    {siteUrl ? (
+                      <a
+                        href={siteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        dir="ltr"
+                        className="inline-flex items-center gap-1 text-[11px] font-mono-num text-blue-700 hover:underline max-w-full truncate"
+                      >
+                        <Globe className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{siteUrl}</span>
+                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">لا يوجد موقع إلكتروني مضاف — اضغط تعديل لإضافته</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingPartner({ ...p, show_in_marquee: Boolean(p.show_in_marquee), is_visible: Boolean(p.is_visible) })}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 rounded-lg font-semibold"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> تعديل البيانات والموقع
+                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await apiFetch(`/api/admin/partners/${p.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ show_in_marquee: !p.show_in_marquee })
+                      });
+                      flashNotice('تم تحديث وحفظ ظهور الشريك في الشريط ✓');
+                      load();
+                      refreshBootstrap();
+                    }}
+                    className="px-2.5 py-1 border border-slate-300 rounded-md hover:bg-slate-50"
+                  >
+                    {p.show_in_marquee ? 'إخفاء بالشريط' : 'إظهار بالشريط'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await apiFetch(`/api/admin/partners/${p.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_visible: !p.is_visible })
+                      });
+                      flashNotice('تم تحديث وحفظ حالة الشريك ✓');
+                      load();
+                      refreshBootstrap();
+                    }}
+                    className="px-2.5 py-1 border border-slate-300 rounded-md hover:bg-slate-50"
+                  >
+                    {p.is_visible ? 'إخفاء' : 'تفعيل'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await apiFetch(`/api/admin/partners/${p.id}`, { method: 'DELETE' });
+                      flashNotice('تم حذف الشريك وحفظ التغييرات ✓');
+                      load();
+                      refreshBootstrap();
+                    }}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-md"
+                    title="حذف الشريك"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={async () => {
-                  await apiFetch(`/api/admin/partners/${p.id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ show_in_marquee: !p.show_in_marquee })
-                  });
-                  load();
-                  refreshBootstrap();
-                }}
-                className="px-2.5 py-1 border border-slate-300 rounded-md"
-              >
-                {p.show_in_marquee ? 'إخفاء بالشريط' : 'إظهار بالشريط'}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await apiFetch(`/api/admin/partners/${p.id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_visible: !p.is_visible })
-                  });
-                  load();
-                  refreshBootstrap();
-                }}
-                className="px-2.5 py-1 border border-slate-300 rounded-md"
-              >
-                {p.is_visible ? 'إخفاء' : 'تفعيل'}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await apiFetch(`/api/admin/partners/${p.id}`, { method: 'DELETE' });
-                  load();
-                  refreshBootstrap();
-                }}
-                className="p-1 text-red-600"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Edit Partner Modal */}
+      {editingPartner && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200 max-h-[92vh] overflow-y-auto text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-950 font-display">تعديل بيانات الشريك / الجهة: {editingPartner.name_ar}</h3>
+              <button type="button" onClick={() => setEditingPartner(null)}><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <form onSubmit={saveEditPartner} className="space-y-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">اسم الجهة / الشريك (عربي) *</label>
+                <input required value={editingPartner.name_ar || ''} onChange={(e) => setEditingPartner({ ...editingPartner, name_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">الاسم بالإنجليزية</label>
+                <input value={editingPartner.name_en || ''} onChange={(e) => setEditingPartner({ ...editingPartner, name_en: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">تصنيف الجهة</label>
+                  <select value={editingPartner.partner_type || 'partner'} onChange={(e) => setEditingPartner({ ...editingPartner, partner_type: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+                    <option value="umbrella">المظلة الرسمية</option>
+                    <option value="government">وزارة / جهة حكومية</option>
+                    <option value="partner">شريك استراتيجي</option>
+                    <option value="corporate">شركة</option>
+                    <option value="civil_society">مؤسسة / جمعية</option>
+                    <option value="academic">جهة تعليمية</option>
+                    <option value="supporter">داعم</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">ترتيب الظهور</label>
+                  <input type="number" value={editingPartner.marquee_order ?? 10} onChange={(e) => setEditingPartner({ ...editingPartner, marquee_order: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">رابط الموقع الإلكتروني للشريك (اتركه فارغًا إن لم يوجد)</label>
+                <input
+                  dir="ltr"
+                  placeholder="https://www.moss.gov.eg"
+                  value={editingPartner.website_url === '/' ? '' : editingPartner.website_url || ''}
+                  onChange={(e) => setEditingPartner({ ...editingPartner, website_url: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">الوصف بالعربية</label>
+                <textarea rows={2} value={editingPartner.description_ar || ''} onChange={(e) => setEditingPartner({ ...editingPartner, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3">
+                <img src={editingPartner.logo_url} alt={editingPartner.name_ar} className="w-12 h-12 object-contain bg-white border rounded-lg p-1 shrink-0" />
+                <label className="flex-1 flex items-center justify-center gap-1.5 border border-dashed border-blue-400 bg-white rounded-lg py-2 cursor-pointer font-semibold text-blue-800">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>تغيير / استبدال شعار الشريك</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setEditingPartner({ ...editingPartner, logo_url: await uploadAdminFile(f, 'logos') }); }} />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-4 pt-1">
+                <label className="flex items-center gap-2 font-semibold cursor-pointer">
+                  <input type="checkbox" checked={Boolean(editingPartner.show_in_marquee)} onChange={(e) => setEditingPartner({ ...editingPartner, show_in_marquee: e.target.checked })} />
+                  <span>إظهار بالشريط المتحرك</span>
+                </label>
+                <label className="flex items-center gap-2 font-semibold cursor-pointer">
+                  <input type="checkbox" checked={Boolean(editingPartner.is_visible)} onChange={(e) => setEditingPartner({ ...editingPartner, is_visible: e.target.checked })} />
+                  <span>ظاهر في صفحة الشركاء</span>
+                </label>
+              </div>
+              <button type="submit" className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-semibold inline-flex items-center justify-center gap-1.5">
+                <Save className="w-4 h-4" /> حفظ التعديلات
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckCircle2, Users } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
+import { OFFICIAL_SITE_ORIGIN, trackPageView } from '../lib/analytics';
 import type { Committee, CommitteeMember, EventItem, LeadershipItem, NewsItem } from '../types';
 
 export const LeadershipPage: React.FC = () => {
@@ -20,7 +21,11 @@ export const LeadershipPage: React.FC = () => {
     { key: 'president', label_ar: 'رئيس المبادرة', label_en: 'Initiative President' },
     { key: 'vice_president', label_ar: 'نائب رئيس المبادرة', label_en: 'Vice President' },
     { key: 'board', label_ar: 'أعضاء مجلس الإدارة', label_en: 'Board Members' },
+    { key: 'governorate_coordinator', label_ar: 'منسقو عموم المحافظات', label_en: 'Governorate General Coordinators' },
+    { key: 'deputy_governorate_coordinator', label_ar: 'نواب منسقي عموم المحافظات', label_en: 'Deputy Governorate Coordinators' },
+    { key: 'committee_coordinator', label_ar: 'منسقو عموم اللجان', label_en: 'Committee General Coordinators' },
     { key: 'committee_head', label_ar: 'رؤساء اللجان', label_en: 'Committee Heads' },
+    { key: 'deputy_committee_head', label_ar: 'نواب رؤساء اللجان', label_en: 'Deputy Committee Heads' },
     { key: 'committee_member', label_ar: 'أعضاء اللجان القياديون', label_en: 'Committee Members' }
   ];
 
@@ -69,7 +74,11 @@ export const LeadershipPage: React.FC = () => {
                         <div className="min-w-0">
                           <h3 className="text-base font-bold text-slate-950 font-display truncate">{t(person.name_ar, person.name_en)}</h3>
                           <p className="text-xs font-semibold text-blue-700 truncate">{t(person.role_ar, person.role_en)}</p>
-                          {person.committee_name && <p className="text-xs text-slate-500 truncate mt-0.5">{person.committee_name}</p>}
+                          {(person.governorate || person.committee_name) && (
+                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                              {[person.governorate ? `${t('محافظة', 'Gov.')} ${person.governorate}` : '', person.committee_name].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {person.bio_ar && <p className="text-sm text-slate-600 leading-relaxed">{t(person.bio_ar, person.bio_en)}</p>}
@@ -117,7 +126,9 @@ export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
           const siteTitle = settings.site_name_ar || 'جيل رقمي آمن';
           const pageTitle = `${com.name_ar} | ${siteTitle}`;
           const pageDesc = (com.description_ar || settings.seo_description || com.name_ar).slice(0, 165);
-          const canonicalOrigin = (settings.site_url || window.location.origin).replace(/\/+$/, '');
+          const rawSiteUrl = (settings.site_url || '').trim().replace(/\/+$/, '');
+          const isInternal = /(localhost|127\.0\.0\.1|ais-dev-|ais-pre-)/i.test(rawSiteUrl);
+          const canonicalOrigin = rawSiteUrl && !isInternal ? rawSiteUrl : OFFICIAL_SITE_ORIGIN;
           const canonicalUrl = `${canonicalOrigin}/committees/${encodeURIComponent(com.slug)}`;
           document.title = pageTitle;
           const canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
@@ -126,8 +137,13 @@ export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
           const fullImg = rawImg ? (rawImg.startsWith('http') ? rawImg : `${canonicalOrigin}${rawImg.startsWith('/') ? rawImg : `/${rawImg}`}`) : '';
           const updateMeta = (attr: 'name' | 'property', key: string, content: string) => {
             if (!content) return;
-            const el = document.querySelector(`meta[${attr}="${key}"]`);
-            if (el) el.setAttribute('content', content);
+            let el = document.querySelector(`meta[${attr}="${key}"]`);
+            if (!el) {
+              el = document.createElement('meta');
+              el.setAttribute(attr, key);
+              document.head.appendChild(el);
+            }
+            el.setAttribute('content', content);
           };
           updateMeta('name', 'description', pageDesc);
           updateMeta('name', 'robots', 'index, follow');
@@ -138,8 +154,10 @@ export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
           updateMeta('name', 'twitter:description', pageDesc);
           if (fullImg) {
             updateMeta('property', 'og:image', fullImg);
+            updateMeta('property', 'og:image:secure_url', fullImg);
             updateMeta('name', 'twitter:image', fullImg);
           }
+          trackPageView(`/committees/${encodeURIComponent(com.slug)}`, pageTitle);
         }
       })
       .finally(() => setLoading(false));
@@ -213,9 +231,23 @@ export const CommitteesPage: React.FC<{ slug?: string }> = ({ slug }) => {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-              <h2 className="text-lg font-bold text-slate-950 font-display">{t('رئاسة اللجنة', 'Committee Head')}</h2>
-              <p className="text-base font-bold text-blue-800">{committee.head_name || t('يُحدَّث عبر الإدارة', 'Updated by Admin')}</p>
-              <p className="text-xs text-slate-500">{committee.head_title}</p>
+              <h2 className="text-lg font-bold text-slate-950 font-display">{t('قيادة اللجنة', 'Committee Leadership')}</h2>
+              <div>
+                <p className="text-xs text-slate-500">{committee.head_title || t('رئيس اللجنة', 'Committee Head')}</p>
+                <p className="text-base font-bold text-blue-800">{committee.head_name || t('يُحدَّث عبر الإدارة', 'Updated by Admin')}</p>
+              </div>
+              {committee.deputy_head_name && (
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-xs text-slate-500">{t('نائب رئيس اللجنة', 'Deputy Committee Head')}</p>
+                  <p className="text-sm font-bold text-slate-900">{committee.deputy_head_name}</p>
+                </div>
+              )}
+              {committee.coordinator_name && (
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-xs text-slate-500">{t('منسق عام اللجنة', 'Committee Coordinator')}</p>
+                  <p className="text-sm font-bold text-slate-900">{committee.coordinator_name}</p>
+                </div>
+              )}
               <div className="pt-3 border-t border-slate-100">
                 <p className="text-xs text-slate-500">{t('إجمالي الأعضاء المسجلين:', 'Registered Members:')}</p>
                 <p className="text-2xl font-bold font-mono-num text-slate-900 mt-1">{members.length}</p>

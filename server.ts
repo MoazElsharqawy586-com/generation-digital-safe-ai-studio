@@ -6,7 +6,6 @@ import fs from 'fs';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import QRCode from 'qrcode';
-import { createServer as createViteServer } from 'vite';
 import { db, initDatabase, generateSafeCode, generateNextMemberNumber } from './server/db.ts';
 import {
   type AuthedRequest,
@@ -19,7 +18,9 @@ import {
 import adminRoutes from './server/routes-admin.ts';
 import {
   buildRobotsTxt,
+  buildSitemapIndexXml,
   buildSitemapXml,
+  buildSsrFallbackHtml,
   getSettingsMap,
   guessImageMime,
   resolveBaseUrl,
@@ -30,13 +31,21 @@ import {
 initDatabase();
 
 const app = express();
-const isProd = process.env.NODE_ENV === 'production';
+const distIndexPath = path.resolve(process.cwd(), 'dist', 'index.html');
+const isProd =
+  process.env.NODE_ENV === 'production' ||
+  process.env.npm_lifecycle_event === 'start' ||
+  (process.env.NODE_ENV !== 'development' && fs.existsSync(distIndexPath));
 const PORT = isProd ? Number(process.env.PORT) || 3000 : 3000;
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+app.get(['/health', '/api/health'], (_req, res) => {
+  res.status(200).json({ ok: true });
+});
 
 // Serve uploaded assets permanently from disk
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
@@ -250,7 +259,7 @@ app.get('/api/auth/me', (req, res) => {
 app.get('/api/public/bootstrap', (_req, res) => {
   const settings = getSettingsMap();
   const committees = db
-    .prepare('SELECT id, slug, name_ar, name_en, logo_url, description_ar, description_en, head_name, head_title, sort_order FROM committees WHERE is_active = 1 ORDER BY sort_order ASC')
+    .prepare('SELECT id, slug, name_ar, name_en, logo_url, description_ar, description_en, head_name, head_title, deputy_head_name, coordinator_name, sort_order FROM committees WHERE is_active = 1 ORDER BY sort_order ASC')
     .all();
   const marqueePartners = db
     .prepare('SELECT id, name_ar, name_en, partner_type, logo_url, website_url, marquee_order FROM partners WHERE is_visible = 1 AND show_in_marquee = 1 ORDER BY marquee_order ASC, id ASC')
@@ -777,7 +786,7 @@ app.get('/api/public/verify/card/:cardNumber', async (req, res) => {
   const row = db
     .prepare(
       `SELECT mc.id, mc.card_number, mc.issue_date, mc.expiry_date, mc.status as card_status, mc.design_id,
-              m.full_name, m.full_name_en, m.member_number, m.avatar_url, m.governorate, m.position_title, m.status as member_status,
+              m.full_name, m.full_name_en, m.member_number, m.national_id_number, m.avatar_url, m.governorate, m.position_title, m.status as member_status,
               c.name_ar as committee_name, c.name_en as committee_name_en
        FROM membership_cards mc
        JOIN members m ON m.id = mc.member_id
@@ -898,6 +907,30 @@ app.get('/manifest.webmanifest', (req, res) => {
   const favMime = guessImageMime(faviconUrl);
   const mainMime = guessImageMime(mainLogoUrl);
 
+  const rawFav = String(settings.favicon_url || '').trim();
+  const isDefaultFav =
+    !rawFav || rawFav === '/icons/logo-192.png' || rawFav.includes('FB_IMG_1789831319399_ac126220');
+  const rawMainLogo = String(settings.logo_url || '').trim();
+  const isDefaultMain = !rawMainLogo || rawMainLogo.includes('FB_IMG_1789831319399_ac126220');
+
+  const manifestIcons = [
+    { src: `${baseUrl}/icons/logo-48.png`, sizes: '48x48', type: 'image/png', purpose: 'any' },
+    { src: `${baseUrl}/icons/logo-96.png`, sizes: '96x96', type: 'image/png', purpose: 'any' },
+    { src: `${baseUrl}/icons/logo-144.png`, sizes: '144x144', type: 'image/png', purpose: 'any' },
+    {
+      src: isDefaultFav ? `${baseUrl}/icons/logo-192.png` : faviconUrl,
+      sizes: '192x192',
+      type: isDefaultFav ? 'image/png' : favMime,
+      purpose: 'any maskable'
+    },
+    {
+      src: isDefaultMain ? `${baseUrl}/icons/logo-512.png` : mainLogoUrl,
+      sizes: '512x512',
+      type: isDefaultMain ? 'image/png' : mainMime,
+      purpose: 'any maskable'
+    }
+  ];
+
   const manifest = {
     name: `${settings.site_name_ar || 'جيل رقمي آمن'} — ${settings.site_name_en || 'SAFE DIGITAL GENERATION'}`,
     short_name: settings.site_name_ar || 'جيل رقمي آمن',
@@ -909,10 +942,7 @@ app.get('/manifest.webmanifest', (req, res) => {
     display: 'standalone',
     theme_color: settings.navy_color || '#0a192f',
     background_color: '#f8fafc',
-    icons: [
-      { src: faviconUrl, sizes: '192x192', type: favMime, purpose: 'any' },
-      { src: mainLogoUrl, sizes: '512x512', type: mainMime, purpose: 'any' }
-    ]
+    icons: manifestIcons
   };
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=300');
@@ -921,18 +951,32 @@ app.get('/manifest.webmanifest', (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   const baseUrl = resolveBaseUrl(req);
-  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.status(200).type('text/plain; charset=utf-8').send(buildRobotsTxt(baseUrl));
 });
 
 app.get('/sitemap.xml', (req, res) => {
   const baseUrl = resolveBaseUrl(req);
-  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Robots-Tag', 'noindex, follow');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.status(200).type('application/xml; charset=utf-8').send(buildSitemapXml(baseUrl));
 });
 
+app.get(['/sitemap_index.xml', '/sitemap-index.xml'], (req, res) => {
+  const baseUrl = resolveBaseUrl(req);
+  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Robots-Tag', 'noindex, follow');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.status(200).type('application/xml; charset=utf-8').send(buildSitemapIndexXml(baseUrl));
+});
+
 // ==================== HTML SERVING + DYNAMIC ALL-ROUTE OPEN GRAPH, TWITTER CARDS & SCHEMA.ORG ====================
-function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): string {
+function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): { html: string; noindex: boolean } {
   const settings = getSettingsMap();
   const baseUrl = resolveBaseUrl(req);
   const rawPathname = (req.originalUrl || req.url || req.path || '/').split('?')[0].split('#')[0] || '/';
@@ -943,8 +987,16 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
     settings.seo_description ||
     'المنصة الرسمية لمبادرة جيل رقمي آمن تحت مظلة الاتحاد النوعي حكاية وطن (1279 لسنة 2025) بوزارة التضامن الاجتماعي.';
 
-  const faviconUrl = toPublicUrl(settings.favicon_url || settings.logo_url, baseUrl);
-  const orgLogoUrl = toPublicUrl(settings.logo_url, baseUrl);
+  const rawFavSetting = String(settings.favicon_url || '').trim();
+  const isDefaultFavicon =
+    !rawFavSetting ||
+    rawFavSetting === '/icons/logo-192.png' ||
+    rawFavSetting.includes('FB_IMG_1789831319399_ac126220');
+  const rawMainLogoSetting = String(settings.logo_url || '').trim();
+  const isDefaultMainLogo = !rawMainLogoSetting || rawMainLogoSetting.includes('FB_IMG_1789831319399_ac126220');
+
+  const faviconUrl = isDefaultFavicon ? '/icons/logo-192.png' : toPublicUrl(rawFavSetting, baseUrl);
+  const orgLogoUrl = isDefaultMainLogo ? `${baseUrl}/icons/logo-512.png` : toPublicUrl(rawMainLogoSetting, baseUrl);
   const defaultShareImage = toPublicUrl(settings.og_image_url || settings.logo_url, baseUrl);
 
   const routeMetaMap: Record<string, { title: string; desc: string; noindex?: boolean }> = {
@@ -1025,6 +1077,19 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
   let extraMeta = '';
 
   const sameAs = [settings.facebook_url, settings.instagram_url, settings.tiktok_url].filter((u) => Boolean(u && u.trim()));
+  const logoImageObject: Record<string, unknown> = {
+    '@type': 'ImageObject',
+    '@id': `${baseUrl}/#logo`,
+    inLanguage: 'ar',
+    url: orgLogoUrl,
+    contentUrl: orgLogoUrl,
+    caption: siteName
+  };
+  if (isDefaultMainLogo) {
+    logoImageObject.width = 512;
+    logoImageObject.height = 512;
+  }
+
   const orgSchema: Record<string, unknown> = {
     '@type': 'Organization',
     '@id': `${baseUrl}/#organization`,
@@ -1032,11 +1097,8 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
     alternateName: settings.site_name_en || 'Safe Digital Generation Initiative',
     url: `${baseUrl}/`,
     slogan: settings.site_slogan_ar || 'معًا لمستقبل رقمي آمن',
-    logo: {
-      '@type': 'ImageObject',
-      url: orgLogoUrl
-    },
-    image: orgLogoUrl,
+    logo: logoImageObject,
+    image: { '@id': `${baseUrl}/#logo` },
     email: settings.email || 'generationdigitalsafe@gmail.com',
     telephone: settings.phone || '+201277714301',
     contactPoint: {
@@ -1061,10 +1123,18 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
 
   const graphItems: Record<string, unknown>[] = [orgSchema, websiteSchema];
 
+  function safeDecode(val: string): string {
+    try {
+      return decodeURIComponent(val);
+    } catch {
+      return val;
+    }
+  }
+
   // Dynamic News Article Route (/news/:slug)
   const newsMatch = cleanPath.match(/^\/news\/([^/]+)$/);
   if (newsMatch) {
-    const slug = decodeURIComponent(newsMatch[1]);
+    const slug = safeDecode(newsMatch[1]);
     const item = db.prepare("SELECT * FROM news WHERE slug = ? AND status = 'published'").get(slug) as any;
     if (item) {
       ogType = 'article';
@@ -1103,7 +1173,7 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
   // Dynamic Committee Route (/committees/:slug)
   const committeeMatch = cleanPath.match(/^\/committees\/([^/]+)$/);
   if (committeeMatch) {
-    const slug = decodeURIComponent(committeeMatch[1]);
+    const slug = safeDecode(committeeMatch[1]);
     const com = db.prepare('SELECT * FROM committees WHERE slug = ? AND is_active = 1').get(slug) as any;
     if (com) {
       canonicalUrl = `${baseUrl}/committees/${encodeURIComponent(com.slug)}`;
@@ -1177,15 +1247,63 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
 
   const favMime = guessImageMime(faviconUrl);
   const ogImgEsc = escHtml(ogImage);
+  const ogImageMime = guessImageMime(ogImage);
+  const isOfficialSquareLogo = ogImage.includes('FB_IMG_1789831319399_ac126220') || ogImage.includes('/icons/logo-512.png');
+
+  if (!routeMetaMap[cleanPath]?.noindex) {
+    graphItems.push({
+      '@type': 'WebPage',
+      '@id': `${canonicalUrl}#webpage`,
+      url: canonicalUrl,
+      name: pageTitle,
+      description: pageDesc,
+      isPartOf: { '@id': `${baseUrl}/#website` },
+      about: { '@id': `${baseUrl}/#organization` },
+      primaryImageOfPage: {
+        '@type': 'ImageObject',
+        url: ogImage
+      },
+      inLanguage: 'ar'
+    });
+  }
+
   const safeSchemaJson = JSON.stringify({ '@context': 'https://schema.org', '@graph': graphItems }).replace(/</g, '\\u003c');
+
+  let pageKeywords =
+    'جيل رقمي آمن, SAFE DIGITAL GENERATION, حكاية وطن, وزارة التضامن الاجتماعي, الأمن السيبراني, التوعية الرقمية, الذكاء الاصطناعي, البرمجة للشباب';
+  if (newsMatch) {
+    const slug = safeDecode(newsMatch[1]);
+    const kwRow = db.prepare("SELECT keywords FROM news WHERE slug = ? AND status = 'published'").get(slug) as { keywords?: string } | undefined;
+    if (kwRow?.keywords) pageKeywords = kwRow.keywords;
+  }
+
+  const iconLinksHtml = isDefaultFavicon
+    ? `<link rel="icon" type="image/png" sizes="48x48" href="/icons/logo-48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/icons/logo-96.png" />
+    <link rel="icon" type="image/png" sizes="144x144" href="/icons/logo-144.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/logo-192.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icons/logo-192.png" />`
+    : `<link rel="icon" type="${escHtml(favMime)}" href="${escHtml(faviconUrl)}" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/logo-48.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="${escHtml(faviconUrl)}" />`;
+
+  const ogDimsHtml = ogImage.includes('FB_IMG_1789831319399_ac126220')
+    ? `\n    <meta property="og:image:width" content="1254" />\n    <meta property="og:image:height" content="1254" />`
+    : ogImage.includes('/icons/logo-512.png')
+      ? `\n    <meta property="og:image:width" content="512" />\n    <meta property="og:image:height" content="512" />`
+      : '';
+
+  const thumbnailUrl = isOfficialSquareLogo ? `${baseUrl}/icons/logo-512.png` : ogImage;
 
   const metaBlock = `
     <title>${escHtml(pageTitle)}</title>
     <meta name="description" content="${escHtml(pageDesc)}" />
+    <meta name="keywords" content="${escHtml(pageKeywords)}" />
     <meta name="robots" content="${escHtml(robotsContent)}" />
     <link rel="canonical" href="${escHtml(canonicalUrl)}" />
-    <link rel="icon" type="${escHtml(favMime)}" href="${escHtml(faviconUrl)}" />
-    <link rel="apple-touch-icon" href="${escHtml(faviconUrl)}" />
+    ${iconLinksHtml}
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta property="og:type" content="${ogType}" />
     <meta property="og:locale" content="ar_EG" />
@@ -1196,29 +1314,43 @@ function injectDynamicSeoAndOpenGraph(html: string, req: express.Request): strin
     <meta property="og:image" content="${ogImgEsc}" />${
       ogImage.startsWith('https://') ? `\n    <meta property="og:image:secure_url" content="${ogImgEsc}" />` : ''
     }
+    <meta property="og:image:type" content="${escHtml(ogImageMime)}" />${ogDimsHtml}
     <meta property="og:image:alt" content="${escHtml(ogImageAlt)}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />${extraMeta}
+    <meta name="thumbnail" content="${escHtml(thumbnailUrl)}" />${extraMeta}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escHtml(pageTitle)}" />
     <meta name="twitter:description" content="${escHtml(pageDesc)}" />
     <meta name="twitter:image" content="${ogImgEsc}" />
+    <meta name="twitter:image:alt" content="${escHtml(ogImageAlt)}" />
     <script type="application/ld+json">${safeSchemaJson}</script>
   `;
 
-  return html
+  let outputHtml = html
     .replace(/<title>[\s\S]*?<\/title>/gi, '')
     .replace(/<meta[^>]+name="description"[^>]*>/gi, '')
+    .replace(/<meta[^>]+name="keywords"[^>]*>/gi, '')
     .replace(/<meta[^>]+name="robots"[^>]*>/gi, '')
+    .replace(/<meta[^>]+name="thumbnail"[^>]*>/gi, '')
     .replace(/<meta[^>]+property="og:[^"]+"[^>]*>/gi, '')
     .replace(/<meta[^>]+property="article:[^"]+"[^>]*>/gi, '')
     .replace(/<meta[^>]+name="twitter:[^"]+"[^>]*>/gi, '')
     .replace(/<link[^>]+rel="canonical"[^>]*>/gi, '')
     .replace(/<link[^>]+rel="icon"[^>]*>/gi, '')
+    .replace(/<link[^>]+rel="shortcut icon"[^>]*>/gi, '')
     .replace(/<link[^>]+rel="apple-touch-icon"[^>]*>/gi, '')
     .replace(/<link[^>]+rel="manifest"[^>]*>/gi, '')
     .replace(/<script[^>]+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace('</head>', `${metaBlock}\n  </head>`);
+
+  const isNoindex = robotsContent.includes('noindex');
+  if (!isNoindex) {
+    const ssrFallback = buildSsrFallbackHtml(cleanPath, pageTitle, pageDesc, settings);
+    if (ssrFallback) {
+      outputHtml = outputHtml.replace('<div id="root"></div>', `<div id="root">${ssrFallback}</div>`);
+    }
+  }
+
+  return { html: outputHtml, noindex: isNoindex };
 }
 
 async function startServer() {
@@ -1227,22 +1359,35 @@ async function startServer() {
   } catch (err) {
     console.warn('SEO file sync warning:', err);
   }
+
+  // Return clean 404 JSON for unmatched API routes before SPA HTML fallback
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'نقطة النهاية غير موجودة' });
+  });
+
   if (!isProd) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'custom'
     });
     app.use(vite.middlewares);
     app.use('*', async (req, res, next) => {
-      if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/uploads')) {
+      if (req.originalUrl.startsWith('/uploads')) {
         next();
         return;
       }
       try {
         const template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
-        let html = await vite.transformIndexHtml(req.originalUrl, template);
-        html = injectDynamicSeoAndOpenGraph(html, req);
-        res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
+        const transformed = await vite.transformIndexHtml(req.originalUrl, template);
+        const { html, noindex } = injectDynamicSeoAndOpenGraph(transformed, req);
+        res
+          .status(200)
+          .set({
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-Robots-Tag': noindex ? 'noindex, nofollow' : 'index, follow'
+          })
+          .end(html);
       } catch (e) {
         vite.ssrFixStacktrace(e as Error);
         next(e);
@@ -1251,21 +1396,65 @@ async function startServer() {
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
     const publicDir = path.resolve(process.cwd(), 'public');
+    const htmlPath = path.join(distDir, 'index.html');
+    const cachedProdHtml = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
+
     app.use(express.static(distDir, { index: false }));
     if (fs.existsSync(publicDir)) {
       app.use(express.static(publicDir, { index: false }));
     }
     app.get('*', (req, res) => {
-      const htmlPath = path.join(distDir, 'index.html');
-      let html = fs.readFileSync(htmlPath, 'utf8');
-      html = injectDynamicSeoAndOpenGraph(html, req);
-      res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
+      const baseHtml = cachedProdHtml || (fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '');
+      if (!baseHtml) {
+        res.status(503).type('text/plain; charset=utf-8').send('Application build not found.');
+        return;
+      }
+      let html = baseHtml;
+      let noindex = false;
+      try {
+        const rendered = injectDynamicSeoAndOpenGraph(baseHtml, req);
+        html = rendered.html;
+        noindex = rendered.noindex;
+      } catch (err) {
+        console.warn('SEO injection fallback:', err);
+      }
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'X-Robots-Tag': noindex ? 'noindex, nofollow' : 'index, follow'
+        })
+        .end(html);
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Unhandled server error:', err);
+    if (res.headersSent) return;
+    res.status(err?.status || 500).json({ error: 'حدث خطأ غير متوقع في الخادم' });
+  });
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Safe Digital Generation platform running at http://0.0.0.0:${PORT}`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      try {
+        db.close();
+      } catch {
+        // Ignore if already closed
+      }
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
 
 startServer();

@@ -17,6 +17,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
 import { PartnerMarquee } from '../components/PartnerMarquee';
+import { trackEvent } from '../lib/analytics';
 import type { EventItem, GalleryItem, NewsItem, ProjectItem, TrainingItem } from '../types';
 
 export const HomePage: React.FC = () => {
@@ -93,7 +94,10 @@ export const HomePage: React.FC = () => {
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => navigate('/join')}
+                  onClick={() => {
+                    trackEvent('join_cta', { placement: 'hero' });
+                    navigate('/join');
+                  }}
                   className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white rounded-xl transition-colors whitespace-nowrap"
                   style={{ backgroundColor: 'var(--sdg-primary, #1d4ed8)' }}
                 >
@@ -102,14 +106,20 @@ export const HomePage: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/trainings')}
+                  onClick={() => {
+                    trackEvent('trainings_cta', { placement: 'hero' });
+                    navigate('/trainings');
+                  }}
                   className="inline-flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-100 border border-slate-700 hover:border-cyan-400 rounded-xl transition-colors whitespace-nowrap"
                 >
                   <span>{t('استكشف البرامج التدريبية', 'Explore Training Tracks')}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/verify')}
+                  onClick={() => {
+                    trackEvent('verify_cta', { placement: 'hero' });
+                    navigate('/verify');
+                  }}
                   className="inline-flex items-center gap-2 px-4 py-3 text-sm font-medium text-cyan-300 hover:text-cyan-200 transition-colors whitespace-nowrap"
                 >
                   <span>{t('التحقق من الكارنيه والشهادة', 'Verify Card / Certificate')}</span>
@@ -475,7 +485,10 @@ export const HomePage: React.FC = () => {
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
-              onClick={() => navigate('/join')}
+              onClick={() => {
+                trackEvent('join_cta', { placement: 'footer_banner' });
+                navigate('/join');
+              }}
               className="px-6 py-3 text-sm font-semibold text-white rounded-xl transition-colors"
               style={{ backgroundColor: 'var(--sdg-primary, #1d4ed8)' }}
             >
@@ -485,6 +498,7 @@ export const HomePage: React.FC = () => {
               href={settings.facebook_url || 'https://www.facebook.com/generation.digital.safe'}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackEvent('outbound_click', { label: 'home_facebook' })}
               className="px-4 py-3 text-sm font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 rounded-xl inline-flex items-center gap-1.5"
             >
               <span>Facebook</span>
@@ -494,6 +508,7 @@ export const HomePage: React.FC = () => {
               href={settings.instagram_url || 'https://www.instagram.com/generation.digital.safe/'}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackEvent('outbound_click', { label: 'home_instagram' })}
               className="px-4 py-3 text-sm font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 rounded-xl inline-flex items-center gap-1.5"
             >
               <span>Instagram</span>
@@ -503,6 +518,7 @@ export const HomePage: React.FC = () => {
               href={settings.tiktok_url || 'https://www.tiktok.com/@generation.digital.safe'}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackEvent('outbound_click', { label: 'home_tiktok' })}
               className="px-4 py-3 text-sm font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 rounded-xl inline-flex items-center gap-1.5"
             >
               <span>TikTok</span>
