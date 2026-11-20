@@ -334,22 +334,33 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
   const backBg = design.back_bg || '#0F172A';
   const textColor = design.text_color || '#FFFFFF';
 
-  // Customizable texts from Card Designer (preserving official defaults)
-  const headerTitleAr = design.header_title_ar?.trim() || 'جيل رقمي آمن';
-  const headerTitleEn = design.header_title_en?.trim() || 'SAFE DIGITAL GENERATION';
-  const headerSubtitleAr = design.header_subtitle_ar?.trim() || 'معًا لمستقبل رقمي آمن';
-  const cardBadgeAr = design.card_badge_ar?.trim() || 'كارنيه عضوية';
-  const sideSloganAr = design.side_slogan_ar?.trim() || 'جيل واعٍ .. مجتمع أكثر أماناً';
-  const verifyBadgeAr = design.verify_badge_ar?.trim() || 'تحقق من صحة الكارنيه';
-  const vpTitleAr = design.vp_title_ar?.trim() || 'نائب رئيس المبادرة';
-  const vpNamesLines = (design.vp_names_ar ?? 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح')
+  const pickText = (val: string | null | undefined, fallback: string): string =>
+    val !== undefined && val !== null ? val.trim() : fallback;
+
+  // Customizable texts from Card Designer (preserving empty "" when intentionally deleted)
+  const headerTitleAr = pickText(design.header_title_ar, 'جيل رقمي آمن');
+  const headerTitleEn = pickText(design.header_title_en, 'SAFE DIGITAL GENERATION');
+  const headerSubtitleAr = pickText(design.header_subtitle_ar, 'معًا لمستقبل رقمي آمن');
+  const cardBadgeAr = pickText(design.card_badge_ar, 'كارنيه عضوية');
+  const sideSloganAr = pickText(design.side_slogan_ar, 'جيل واعٍ .. مجتمع أكثر أماناً');
+  const verifyBadgeAr = pickText(design.verify_badge_ar, 'تحقق من صحة الكارنيه');
+  const vpTitleAr = pickText(design.vp_title_ar, 'نائب رئيس المبادرة');
+  const vpNamesRaw =
+    design.vp_names_ar !== undefined && design.vp_names_ar !== null
+      ? design.vp_names_ar
+      : 'د. داليا نصار\nأ. أحمد نصار\nأ. أماني عبد الفتاح';
+  const vpNamesLines = vpNamesRaw
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean);
-  const presidentTitleAr = design.president_title_ar?.trim() || 'رئيس المبادرة';
-  const presidentNameAr = design.president_name_ar?.trim() || 'أ. معاذ الشرقاوي';
+  const showVpBox = Boolean(vpTitleAr || vpNamesLines.length > 0);
+  const presidentTitleAr = pickText(design.president_title_ar, 'رئيس المبادرة');
+  const presidentNameAr = pickText(design.president_name_ar, 'أ. معاذ الشرقاوي');
   const presidentSignatureUrl = design.president_signature_url?.trim() || '';
   const presidentSignatureText = design.president_signature_text?.trim() || '';
+  const showPresidentBox = Boolean(
+    presidentTitleAr || presidentNameAr || presidentSignatureUrl || presidentSignatureText
+  );
   const stampUrl = design.stamp_url?.trim() || '';
   const showStamp = Boolean(design.show_stamp) && Boolean(stampUrl);
   const stampPosition = (design.stamp_position || 'over_signature') as
@@ -357,96 +368,33 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
     | 'right_center'
     | 'right_bottom'
     | 'back_left';
-  const backTitleAr = design.back_title_ar?.trim() || 'شركاء النجاح والشراكات المؤسسية';
-  const backSloganAr = design.back_slogan_ar?.trim() || 'معاً ... نبني مجتمعاً رقمياً آمناً';
+  const backTitleAr = pickText(design.back_title_ar, 'شركاء النجاح والشراكات المؤسسية');
+  const backSloganAr = pickText(design.back_slogan_ar, 'معاً ... نبني مجتمعاً رقمياً آمناً');
   const extraRows = parseExtraRows(design.extra_rows_json);
 
-  const isInitiativeLogo = (l: CardLogo) =>
-    l.logo_url.includes('1789831319399') || l.name.includes('جيل رقمي');
+  const centerFrontLogo =
+    frontLogos.find((l) => l.name.trim() === 'شعار مبادرة جيل رقمي آمن') ||
+    frontLogos.find((l) => l.id === 1) ||
+    frontLogos.find((l) => l.logo_url.includes('1789831319399')) ||
+    null;
+  const centerBackLogo =
+    backLogosRaw.find((l) => l.name.trim() === 'شعار مبادرة جيل رقمي آمن') ||
+    backLogosRaw.find((l) => l.id === 1) ||
+    backLogosRaw.find((l) => l.logo_url.includes('1789831319399')) ||
+    centerFrontLogo;
+  const centerInitiativeLogo = centerFrontLogo?.logo_url || '';
+  const backCenterInitiativeLogo = centerBackLogo?.logo_url || '';
+  const displaySealLogos = frontLogos.filter((l) => l.id !== centerFrontLogo?.id);
+  const displayBackLogos = backLogosRaw;
 
-  const centerInitiativeLogo = frontLogos.find(isInitiativeLogo)?.logo_url || OFFICIAL_SDG_LOGO;
-  const sealLogos = frontLogos.filter((l) => !isInitiativeLogo(l));
-  const displaySealLogos =
-    sealLogos.length > 0
-      ? sealLogos.slice(0, 5)
-      : [
-          {
-            id: -1,
-            name: 'حكاية وطن',
-            logo_url: OFFICIAL_HEKAYET_LOGO,
-            side: 'front' as const,
-            card_type: 'all',
-            x_percent: 0,
-            y_percent: 0,
-            width_px: 44,
-            height_px: 44,
-            sort_order: 1,
-            is_active: 1
-          },
-          {
-            id: -2,
-            name: 'وزارة التضامن الاجتماعي',
-            logo_url: OFFICIAL_MOSS_LOGO,
-            side: 'front' as const,
-            card_type: 'all',
-            x_percent: 0,
-            y_percent: 0,
-            width_px: 44,
-            height_px: 44,
-            sort_order: 2,
-            is_active: 1
-          }
-        ];
-
-  const displayBackLogos =
-    backLogosRaw.length > 0
-      ? backLogosRaw
-      : [
-          {
-            id: -11,
-            name: 'مبادرة جيل رقمي آمن',
-            logo_url: OFFICIAL_SDG_LOGO,
-            side: 'back' as const,
-            card_type: 'all',
-            x_percent: 0,
-            y_percent: 0,
-            width_px: 48,
-            height_px: 48,
-            sort_order: 1,
-            is_active: 1
-          },
-          {
-            id: -12,
-            name: 'الاتحاد النوعي حكاية وطن',
-            logo_url: OFFICIAL_HEKAYET_LOGO,
-            side: 'back' as const,
-            card_type: 'all',
-            x_percent: 0,
-            y_percent: 0,
-            width_px: 48,
-            height_px: 48,
-            sort_order: 2,
-            is_active: 1
-          },
-          {
-            id: -13,
-            name: 'وزارة التضامن الاجتماعي',
-            logo_url: OFFICIAL_MOSS_LOGO,
-            side: 'back' as const,
-            card_type: 'all',
-            x_percent: 0,
-            y_percent: 0,
-            width_px: 48,
-            height_px: 48,
-            sort_order: 3,
-            is_active: 1
-          }
-        ];
-
+  const rawFooterNote = design.footer_note_ar;
+  const trimmedFooterNote =
+    rawFooterNote !== undefined && rawFooterNote !== null ? rawFooterNote.trim() : DEFAULT_UMBRELLA_NOTE;
   const isDefaultUmbrella =
-    !design.footer_note_ar ||
-    design.footer_note_ar.trim() === DEFAULT_UMBRELLA_NOTE ||
-    (design.footer_note_ar.includes('حكاية وطن') && design.footer_note_ar.includes('1279') && design.footer_note_ar.includes('المشهر برقم 1279'));
+    trimmedFooterNote === DEFAULT_UMBRELLA_NOTE ||
+    (trimmedFooterNote.includes('حكاية وطن') &&
+      trimmedFooterNote.includes('1279') &&
+      trimmedFooterNote.includes('المشهر برقم 1279'));
 
   const formattedPosition =
     member.position_title && member.governorate && member.position_title.includes('محافظة') && !member.position_title.includes(member.governorate)
@@ -475,16 +423,18 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       ? [{ label: 'تاريخ الانتهاء:', value: formatCardDate(member.expiry_date), icon: CalendarCheck, mono: true }]
       : []),
     ...extraRows.map((r) => ({
-      label: r.label.endsWith(':') ? r.label : `${r.label}:`,
+      label: r.label ? (r.label.endsWith(':') ? r.label : `${r.label}:`) : 'بيان:',
       value: r.value,
       icon: Tag,
       mono: false
     }))
   ];
 
-  const sideSloganLines = sideSloganAr.includes('..')
-    ? sideSloganAr.split('..').map((part, idx, arr) => (idx < arr.length - 1 ? `${part.trim()} ..` : part.trim()))
-    : [sideSloganAr];
+  const sideSloganLines = !sideSloganAr
+    ? []
+    : sideSloganAr.includes('..')
+      ? sideSloganAr.split('..').map((part, idx, arr) => (idx < arr.length - 1 ? `${part.trim()} ..` : part.trim())).filter(Boolean)
+      : [sideSloganAr];
 
   const renderCardCanvasDataUrl = async (targetSide: 'front' | 'back'): Promise<string | null> => {
     if (typeof document !== 'undefined' && document.fonts?.ready) {
@@ -551,43 +501,45 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       ]);
 
       // Header Right Block: Umbrella Text
-      ctx.save();
-      ctx.fillStyle = '#081b4b';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      const rightCenterX = W - 185;
-      if (isDefaultUmbrella) {
-        ctx.font = '800 17px Cairo, sans-serif';
-        ctx.fillText('تحت مظلة', rightCenterX, 24);
-        ctx.font = '700 14px Cairo, sans-serif';
-        ctx.fillText('الاتحاد النوعي للجمعيات', rightCenterX, 44);
-        ctx.fillText('العاملة في مجال التنمية المجتمعية', rightCenterX, 64);
-        ctx.font = '800 22px Cairo, sans-serif';
-        ctx.fillText('(حكاية وطن)', rightCenterX, 91);
-        ctx.font = '700 14px Cairo, sans-serif';
-        ctx.fillText('المشهر برقم 1279 لسنة 2025', rightCenterX, 116);
-        ctx.fillText('بوزارة التضامن الاجتماعي', rightCenterX, 136);
-      } else {
-        ctx.font = '700 15px Cairo, sans-serif';
-        const words = (design.footer_note_ar || '').split(/\s+/);
-        const lines: string[] = [];
-        let line = '';
-        for (const w of words) {
-          const test = line ? `${line} ${w}` : w;
-          if (test.length > 28) {
-            lines.push(line);
-            line = w;
-          } else {
-            line = test;
+      if (isDefaultUmbrella || trimmedFooterNote) {
+        ctx.save();
+        ctx.fillStyle = '#081b4b';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.direction = 'rtl';
+        const rightCenterX = W - 185;
+        if (isDefaultUmbrella) {
+          ctx.font = '800 17px Cairo, sans-serif';
+          ctx.fillText('تحت مظلة', rightCenterX, 24);
+          ctx.font = '700 14px Cairo, sans-serif';
+          ctx.fillText('الاتحاد النوعي للجمعيات', rightCenterX, 44);
+          ctx.fillText('العاملة في مجال التنمية المجتمعية', rightCenterX, 64);
+          ctx.font = '800 22px Cairo, sans-serif';
+          ctx.fillText('(حكاية وطن)', rightCenterX, 91);
+          ctx.font = '700 14px Cairo, sans-serif';
+          ctx.fillText('المشهر برقم 1279 لسنة 2025', rightCenterX, 116);
+          ctx.fillText('بوزارة التضامن الاجتماعي', rightCenterX, 136);
+        } else {
+          ctx.font = '700 15px Cairo, sans-serif';
+          const words = trimmedFooterNote.split(/\s+/);
+          const lines: string[] = [];
+          let line = '';
+          for (const w of words) {
+            const test = line ? `${line} ${w}` : w;
+            if (test.length > 28) {
+              lines.push(line);
+              line = w;
+            } else {
+              line = test;
+            }
           }
+          if (line) lines.push(line);
+          lines.slice(0, 5).forEach((ln, idx) => {
+            ctx.fillText(ln, rightCenterX, 34 + idx * 24, 330);
+          });
         }
-        if (line) lines.push(line);
-        lines.slice(0, 5).forEach((ln, idx) => {
-          ctx.fillText(ln, rightCenterX, 34 + idx * 24, 330);
-        });
+        ctx.restore();
       }
-      ctx.restore();
 
       // Header Center Block: Initiative Emblem + Brand Lockup
       ctx.save();
@@ -601,34 +553,45 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
         drawImageContain(ctx, sdgImg, 645, 28, 100, 100);
         ctx.restore();
       }
+      const titleCenterX = sdgImg ? 515 : 585;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      ctx.fillStyle = '#081b4b';
-      ctx.font = '800 33px Cairo, sans-serif';
-      ctx.fillText(headerTitleAr, 515, 48, 280);
+      if (headerTitleAr) {
+        ctx.direction = 'rtl';
+        ctx.fillStyle = '#081b4b';
+        ctx.font = '800 33px Cairo, sans-serif';
+        ctx.fillText(headerTitleAr, titleCenterX, 48, 280);
+      }
 
-      ctx.direction = 'ltr';
-      ctx.fillStyle = '#0284c7';
-      ctx.font = '800 18px Cairo, sans-serif';
-      ctx.fillText(headerTitleEn, 515, 84, 280);
+      if (headerTitleEn) {
+        ctx.direction = 'ltr';
+        ctx.fillStyle = '#0284c7';
+        ctx.font = '800 18px Cairo, sans-serif';
+        ctx.fillText(headerTitleEn, titleCenterX, 84, 280);
+      }
 
-      ctx.direction = 'rtl';
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '700 16px Cairo, sans-serif';
-      ctx.fillText(headerSubtitleAr, 515, 116, 280);
+      if (headerSubtitleAr) {
+        ctx.direction = 'rtl';
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '700 16px Cairo, sans-serif';
+        ctx.fillText(headerSubtitleAr, titleCenterX, 116, 280);
+      }
       ctx.restore();
 
-      // Header Left Block: Institutional & Admin-Added Seals
+      // Header Left Block: Institutional & Admin-Added Seals (wraps cleanly for any count)
       const sealCount = displaySealLogos.length;
-      const sealSize = sealCount <= 2 ? 96 : sealCount === 3 ? 82 : 66;
-      const sealGap = sealCount <= 2 ? 16 : 10;
+      const sealPerRow = sealCount <= 4 ? Math.max(1, sealCount) : Math.ceil(sealCount / 2);
+      const sealRows = sealCount === 0 ? 0 : Math.ceil(sealCount / sealPerRow);
+      const sealSize = sealRows <= 1 ? (sealCount <= 2 ? 96 : sealCount === 3 ? 80 : 62) : Math.min(54, Math.floor(310 / sealPerRow) - 6);
+      const sealGap = sealRows <= 1 ? (sealCount <= 2 ? 16 : 10) : 8;
       sealImgs.forEach((img, idx) => {
         const logoMeta = displaySealLogos[idx];
         const sizeScale = Math.min(1.12, Math.max(0.82, (logoMeta?.width_px || 42) / 42));
         const dSize = Math.round(sealSize * sizeScale);
-        const sx = 32 + idx * (sealSize + sealGap);
-        const sy = 22 + Math.round((sealSize - dSize) / 2);
+        const rIdx = Math.floor(idx / sealPerRow);
+        const cIdx = idx % sealPerRow;
+        const sx = 28 + cIdx * (sealSize + sealGap);
+        const sy = (sealRows <= 1 ? 22 : 14) + rIdx * (sealSize + 6) + Math.round((sealSize - dSize) / 2);
         ctx.save();
         ctx.beginPath();
         ctx.arc(sx + dSize / 2, sy + dSize / 2, dSize / 2, 0, Math.PI * 2);
@@ -643,7 +606,9 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       });
 
       // 2. Gold Membership Ribbon
-      drawGoldRibbon(ctx, 375, 184, 450, 52, cardBadgeAr, true);
+      if (cardBadgeAr) {
+        drawGoldRibbon(ctx, 375, 184, 450, 52, cardBadgeAr, true);
+      }
 
       // 3. Right Column: Official Stamp (when placed on right) or Initiative Emblem + Slogan (Shield & WhatsApp removed)
       ctx.save();
@@ -737,9 +702,9 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       const rowW = rowRight - rowLeft;
       const tagW = 205;
       const totalRows = memberRows.length;
-      const maxStackH = 290;
+      const maxStackH = showVpBox ? 290 : 420;
       const rowGap = Math.min(44, Math.floor(maxStackH / Math.max(1, totalRows)));
-      const rowH = Math.min(38, rowGap - 5);
+      const rowH = Math.min(38, Math.max(20, rowGap - 4));
       const startY = 250;
 
       memberRows.forEach((row, idx) => {
@@ -760,7 +725,7 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.direction = row.mono ? 'ltr' : 'rtl';
-        const fontSize = rowH < 30 ? 17 : rowH < 34 ? 19 : 21;
+        const fontSize = Math.max(12, Math.min(21, Math.round(rowH * 0.56)));
         ctx.font = row.mono ? `800 ${fontSize}px "IBM Plex Mono", Cairo, monospace` : `800 ${fontSize}px Cairo, sans-serif`;
         const valCenterX = rowLeft + (rowW - tagW) / 2;
         ctx.fillText(row.value || '—', valCenterX, ry + rowH / 2 + 1, rowW - tagW - 22);
@@ -778,75 +743,81 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
 
         ctx.fillStyle = '#e0f2fe';
         ctx.beginPath();
-        ctx.arc(rowRight - 22, ry + rowH / 2, 6, 0, Math.PI * 2);
+        ctx.arc(rowRight - 22, ry + rowH / 2, Math.min(6, rowH * 0.18), 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'right';
         ctx.direction = 'rtl';
-        ctx.font = `800 ${rowH < 32 ? 17 : 18}px Cairo, sans-serif`;
+        const lblFontSize = Math.max(11, Math.min(18, Math.round(rowH * 0.48)));
+        ctx.font = `800 ${lblFontSize}px Cairo, sans-serif`;
         ctx.fillText(row.label, rowRight - 36, ry + rowH / 2 + 1, tagW - 42);
         ctx.restore();
       });
 
       // Opposite Side Block: Vice Presidents Names (في الناحية الأخرى أسماء النواب)
-      const vpY = 554;
-      const vpH = 152;
-      ctx.save();
-      drawRoundedRect(ctx, rowLeft, vpY, rowW, vpH, 20);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
+      if (showVpBox) {
+        const vpY = 554;
+        const vpH = 152;
+        ctx.save();
+        drawRoundedRect(ctx, rowLeft, vpY, rowW, vpH, 20);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
 
-      // Navy Pill Header for Vice Presidents Title
-      const vpHeaderW = 280;
-      const vpHeaderH = 34;
-      const vpHeaderX = rowLeft + (rowW - vpHeaderW) / 2;
-      const vpHeaderY = vpY + 12;
-      const vpHeaderGrad = ctx.createLinearGradient(vpHeaderX, vpHeaderY, vpHeaderX + vpHeaderW, vpHeaderY);
-      vpHeaderGrad.addColorStop(0, '#0a3d91');
-      vpHeaderGrad.addColorStop(1, '#04194a');
-      drawRoundedRect(ctx, vpHeaderX, vpHeaderY, vpHeaderW, vpHeaderH, vpHeaderH / 2);
-      ctx.fillStyle = vpHeaderGrad;
-      ctx.fill();
+        if (vpTitleAr) {
+          const vpHeaderW = 280;
+          const vpHeaderH = 34;
+          const vpHeaderX = rowLeft + (rowW - vpHeaderW) / 2;
+          const vpHeaderY = vpY + 12;
+          const vpHeaderGrad = ctx.createLinearGradient(vpHeaderX, vpHeaderY, vpHeaderX + vpHeaderW, vpHeaderY);
+          vpHeaderGrad.addColorStop(0, '#0a3d91');
+          vpHeaderGrad.addColorStop(1, '#04194a');
+          drawRoundedRect(ctx, vpHeaderX, vpHeaderY, vpHeaderW, vpHeaderH, vpHeaderH / 2);
+          ctx.fillStyle = vpHeaderGrad;
+          ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      ctx.font = '800 18px Cairo, sans-serif';
-      ctx.fillText(vpTitleAr, vpHeaderX + vpHeaderW / 2, vpHeaderY + vpHeaderH / 2 + 1, vpHeaderW - 24);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.direction = 'rtl';
+          ctx.font = '800 18px Cairo, sans-serif';
+          ctx.fillText(vpTitleAr, vpHeaderX + vpHeaderW / 2, vpHeaderY + vpHeaderH / 2 + 1, vpHeaderW - 24);
+        }
 
-      // Vice President Names arranged cleanly
-      const vpList = vpNamesLines.slice(0, 6);
-      ctx.fillStyle = '#04133a';
-      if (vpList.length <= 3) {
-        const colW = rowW / Math.max(1, vpList.length);
-        ctx.font = `800 ${vpList.length <= 2 ? 22 : 20}px Cairo, sans-serif`;
-        vpList.forEach((name, idx) => {
-          const itemCenterX = rowRight - colW * (idx + 0.5);
-          ctx.fillText(name, itemCenterX, vpY + 98, colW - 20);
-          if (idx < vpList.length - 1) {
-            ctx.fillStyle = '#cbd5e1';
-            ctx.fillRect(rowRight - colW * (idx + 1), vpY + 68, 2, 58);
-            ctx.fillStyle = '#04133a';
-          }
-        });
-      } else {
-        const half = Math.ceil(vpList.length / 2);
-        ctx.font = '800 18px Cairo, sans-serif';
-        vpList.forEach((name, idx) => {
-          const colIdx = Math.floor(idx / half);
-          const rowIdx = idx % half;
-          const xPos = colIdx === 0 ? rowLeft + rowW * 0.72 : rowLeft + rowW * 0.28;
-          ctx.fillText(name, xPos, vpY + 68 + rowIdx * 28, rowW * 0.44);
-        });
+        const vpList = vpNamesLines.slice(0, 6);
+        ctx.fillStyle = '#04133a';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.direction = 'rtl';
+        if (vpList.length > 0 && vpList.length <= 3) {
+          const colW = rowW / vpList.length;
+          ctx.font = `800 ${vpList.length <= 2 ? 22 : 20}px Cairo, sans-serif`;
+          vpList.forEach((name, idx) => {
+            const itemCenterX = rowRight - colW * (idx + 0.5);
+            ctx.fillText(name, itemCenterX, vpY + (vpTitleAr ? 98 : 76), colW - 20);
+            if (idx < vpList.length - 1) {
+              ctx.fillStyle = '#cbd5e1';
+              ctx.fillRect(rowRight - colW * (idx + 1), vpY + 68, 2, 58);
+              ctx.fillStyle = '#04133a';
+            }
+          });
+        } else if (vpList.length > 3) {
+          const half = Math.ceil(vpList.length / 2);
+          ctx.font = '800 18px Cairo, sans-serif';
+          vpList.forEach((name, idx) => {
+            const colIdx = Math.floor(idx / half);
+            const rowIdx = idx % half;
+            const xPos = colIdx === 0 ? rowLeft + rowW * 0.72 : rowLeft + rowW * 0.28;
+            ctx.fillText(name, xPos, vpY + 68 + rowIdx * 28, rowW * 0.44);
+          });
+        }
+        ctx.restore();
       }
-      ctx.restore();
 
-      // 5. Left Column: Portrait -> President Name & Signature Below Portrait -> QR Code -> Verify Badge
+      // 5. Left Column: Portrait -> President Name & Signature Below Portrait -> QR -> Verify Badge
       const px = 54;
       const py = 212;
       const pw = 190;
@@ -880,46 +851,50 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       }
       ctx.restore();
 
-      // President Name + Signature directly beneath the Photo
       const presBoxX = 36;
       const presBoxY = 408;
       const presBoxW = 226;
       const presBoxH = 112;
-      ctx.save();
-      drawRoundedRect(ctx, presBoxX, presBoxY, presBoxW, presBoxH, 14);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#fbbf24';
-      ctx.stroke();
-
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      ctx.fillStyle = '#0a3d91';
-      ctx.font = '800 15px Cairo, sans-serif';
-      ctx.fillText(presidentTitleAr, presBoxX + presBoxW / 2, presBoxY + 20, presBoxW - 16);
-
-      ctx.fillStyle = '#04133a';
-      ctx.font = '800 19px Cairo, sans-serif';
-      ctx.fillText(presidentNameAr, presBoxX + presBoxW / 2, presBoxY + 46, presBoxW - 14);
-
-      if (sigImg) {
-        drawImageContain(ctx, sigImg, presBoxX + 26, presBoxY + 58, presBoxW - 52, 46);
-      } else {
-        const sigLabel = presidentSignatureText || presidentNameAr;
-        ctx.fillStyle = '#1e3a8a';
-        ctx.font = 'italic 700 16px Cairo, serif';
-        ctx.fillText(sigLabel, presBoxX + presBoxW / 2, presBoxY + 76, presBoxW - 24);
-        // Stylistic ink pen signature underline flourish
-        ctx.beginPath();
-        ctx.moveTo(presBoxX + 42, presBoxY + 95);
-        ctx.bezierCurveTo(presBoxX + 95, presBoxY + 86, presBoxX + 145, presBoxY + 102, presBoxX + presBoxW - 38, presBoxY + 90);
+      if (showPresidentBox) {
+        ctx.save();
+        drawRoundedRect(ctx, presBoxX, presBoxY, presBoxW, presBoxH, 14);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        ctx.fill();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#1d4ed8';
+        ctx.strokeStyle = '#fbbf24';
         ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.direction = 'rtl';
+        if (presidentTitleAr) {
+          ctx.fillStyle = '#0a3d91';
+          ctx.font = '800 15px Cairo, sans-serif';
+          ctx.fillText(presidentTitleAr, presBoxX + presBoxW / 2, presBoxY + 20, presBoxW - 16);
+        }
+
+        if (presidentNameAr) {
+          ctx.fillStyle = '#04133a';
+          ctx.font = '800 19px Cairo, sans-serif';
+          ctx.fillText(presidentNameAr, presBoxX + presBoxW / 2, presBoxY + 46, presBoxW - 14);
+        }
+
+        if (sigImg) {
+          drawImageContain(ctx, sigImg, presBoxX + 26, presBoxY + 58, presBoxW - 52, 46);
+        } else if (presidentSignatureText || presidentNameAr) {
+          const sigLabel = presidentSignatureText || presidentNameAr;
+          ctx.fillStyle = '#1e3a8a';
+          ctx.font = 'italic 700 16px Cairo, serif';
+          ctx.fillText(sigLabel, presBoxX + presBoxW / 2, presBoxY + 76, presBoxW - 24);
+          ctx.beginPath();
+          ctx.moveTo(presBoxX + 42, presBoxY + 95);
+          ctx.bezierCurveTo(presBoxX + 95, presBoxY + 86, presBoxX + 145, presBoxY + 102, presBoxX + presBoxW - 38, presBoxY + 90);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#1d4ed8';
+          ctx.stroke();
+        }
+        ctx.restore();
       }
-      ctx.restore();
 
       if (showStamp && stampImg && stampPosition === 'over_signature') {
         const scxLeft = 232;
@@ -958,33 +933,37 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       }
       ctx.restore();
 
-      const vbx = 36;
-      const vby = 656;
-      const vbw = 226;
-      const vbh = 40;
-      ctx.save();
-      drawRoundedRect(ctx, vbx, vby, vbw, vbh, vbh / 2);
-      ctx.fillStyle = '#061a44';
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(186, 230, 253, 0.7)';
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      ctx.font = '700 16px Cairo, sans-serif';
-      ctx.fillText(`✓  ${verifyBadgeAr}`, vbx + vbw / 2, vby + vbh / 2 + 1, vbw - 18);
-      ctx.restore();
+      if (verifyBadgeAr) {
+        const vbx = 36;
+        const vby = 656;
+        const vbw = 226;
+        const vbh = 40;
+        ctx.save();
+        drawRoundedRect(ctx, vbx, vby, vbw, vbh, vbh / 2);
+        ctx.fillStyle = '#061a44';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(186, 230, 253, 0.7)';
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.direction = 'rtl';
+        ctx.font = '700 16px Cairo, sans-serif';
+        ctx.fillText(`✓  ${verifyBadgeAr}`, vbx + vbw / 2, vby + vbh / 2 + 1, vbw - 18);
+        ctx.restore();
+      }
     } else {
       // BACK SIDE
       const [sdgImg, backStampImg, ...partnerImgs] = await Promise.all([
-        loadImg(centerInitiativeLogo),
+        loadImg(backCenterInitiativeLogo),
         loadImg(showStamp && stampPosition === 'back_left' ? stampUrl : ''),
         ...displayBackLogos.map((l) => loadImg(l.logo_url))
       ]);
 
-      drawGoldRibbon(ctx, 210, 34, 780, 54, backTitleAr, true);
+      if (backTitleAr) {
+        drawGoldRibbon(ctx, 210, 34, 780, 54, backTitleAr, true);
+      }
 
       const count = displayBackLogos.length;
       const maxPerRow = count <= 6 ? count : count <= 12 ? Math.ceil(count / 2) : count <= 18 ? Math.ceil(count / 3) : Math.ceil(count / 4);
@@ -1089,20 +1068,27 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
         drawImageContain(ctx, sdgImg, 656, 496, 108, 108);
         ctx.restore();
       }
+      const backTitleCenterX = sdgImg ? 510 : 590;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.direction = 'rtl';
-      ctx.fillStyle = textColor;
-      ctx.font = '800 38px Cairo, sans-serif';
-      ctx.fillText(headerTitleAr, 510, 535, 300);
+      if (headerTitleAr) {
+        ctx.direction = 'rtl';
+        ctx.fillStyle = textColor;
+        ctx.font = '800 38px Cairo, sans-serif';
+        ctx.fillText(headerTitleAr, backTitleCenterX, 535, 300);
+      }
 
-      ctx.direction = 'ltr';
-      ctx.fillStyle = '#67e8f9';
-      ctx.font = '800 19px Cairo, sans-serif';
-      ctx.fillText(headerTitleEn, 510, 578, 300);
+      if (headerTitleEn) {
+        ctx.direction = 'ltr';
+        ctx.fillStyle = '#67e8f9';
+        ctx.font = '800 19px Cairo, sans-serif';
+        ctx.fillText(headerTitleEn, backTitleCenterX, 578, 300);
+      }
       ctx.restore();
 
-      drawGoldRibbon(ctx, 295, 646, 610, 52, backSloganAr, false);
+      if (backSloganAr) {
+        drawGoldRibbon(ctx, 295, 646, 610, 52, backSloganAr, false);
+      }
 
       if (showStamp && backStampImg && stampPosition === 'back_left') {
         const bsx = 128;
@@ -1343,26 +1329,34 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
                 <p className="text-[6.5px] sm:text-[7.5px] font-bold">المشهر برقم 1279 لسنة 2025</p>
                 <p className="text-[6.5px] sm:text-[7.5px] font-bold">بوزارة التضامن الاجتماعي</p>
               </>
-            ) : (
-              <p className="text-[7px] sm:text-[8.5px] font-bold leading-snug line-clamp-4">{design.footer_note_ar}</p>
-            )}
+            ) : trimmedFooterNote ? (
+              <p className="text-[7px] sm:text-[8.5px] font-bold leading-snug line-clamp-4">{trimmedFooterNote}</p>
+            ) : null}
           </div>
 
           {/* Center Zone: Emblem + Bilingual Title */}
           <div className="col-span-5 flex items-center justify-center gap-1.5 sm:gap-2">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white shadow-sm border border-sky-200 p-0.5 shrink-0 overflow-hidden flex items-center justify-center">
-              <SafeImage src={centerInitiativeLogo} alt={headerTitleAr} className="w-full h-full object-contain rounded-full" />
-            </div>
+            {centerInitiativeLogo && (
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white shadow-sm border border-sky-200 p-0.5 shrink-0 overflow-hidden flex items-center justify-center">
+                <SafeImage src={centerInitiativeLogo} alt={headerTitleAr || 'شعار المبادرة'} className="w-full h-full object-contain rounded-full" />
+              </div>
+            )}
             <div className="text-center min-w-0">
-              <p className="text-[11px] sm:text-[14.5px] font-black text-[#04133a] font-display leading-tight">
-                {headerTitleAr}
-              </p>
-              <p className="text-[6px] sm:text-[7.5px] font-extrabold tracking-tight text-sky-700 uppercase mt-0.5">
-                {headerTitleEn}
-              </p>
-              <p className="text-[6.5px] sm:text-[8px] font-bold text-slate-800">
-                {headerSubtitleAr}
-              </p>
+              {headerTitleAr && (
+                <p className="text-[11px] sm:text-[14.5px] font-black text-[#04133a] font-display leading-tight">
+                  {headerTitleAr}
+                </p>
+              )}
+              {headerTitleEn && (
+                <p className="text-[6px] sm:text-[7.5px] font-extrabold tracking-tight text-sky-700 uppercase mt-0.5">
+                  {headerTitleEn}
+                </p>
+              )}
+              {headerSubtitleAr && (
+                <p className="text-[6.5px] sm:text-[8px] font-bold text-slate-800">
+                  {headerSubtitleAr}
+                </p>
+              )}
             </div>
           </div>
 
@@ -1370,7 +1364,9 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
           <div className="col-span-3 flex items-center justify-end gap-1 flex-wrap">
             {displaySealLogos.map((logo) => {
               const scale = Math.min(1.15, Math.max(0.82, (logo.width_px || 42) / 42));
-              const pxSize = Math.round((displaySealLogos.length > 2 ? 28 : 36) * scale);
+              const basePx =
+                displaySealLogos.length > 5 ? 20 : displaySealLogos.length > 3 ? 25 : displaySealLogos.length > 2 ? 28 : 36;
+              const pxSize = Math.round(basePx * scale);
               return (
                 <div
                   key={logo.id}
@@ -1387,20 +1383,24 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       </div>
 
       {/* Gold Ribbon Banner */}
-      <div className="relative z-10 flex justify-center -mt-1.5 mb-1.5">
-        <div
-          className="px-5 sm:px-7 py-0.5 rounded-full shadow-md border border-amber-200/90 flex items-center gap-2"
-          style={{
-            background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
-          }}
-        >
-          <span className="text-amber-100 drop-shadow text-[9px] sm:text-[11px]">★</span>
-          <span className="text-[9.5px] sm:text-[12px] font-black text-[#04133a] font-display whitespace-nowrap">
-            {cardBadgeAr}
-          </span>
-          <span className="text-amber-100 drop-shadow text-[9px] sm:text-[11px]">★</span>
+      {cardBadgeAr ? (
+        <div className="relative z-10 flex justify-center -mt-1.5 mb-1.5">
+          <div
+            className="px-5 sm:px-7 py-0.5 rounded-full shadow-md border border-amber-200/90 flex items-center gap-2"
+            style={{
+              background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
+            }}
+          >
+            <span className="text-amber-100 drop-shadow text-[9px] sm:text-[11px]">★</span>
+            <span className="text-[9.5px] sm:text-[12px] font-black text-[#04133a] font-display whitespace-nowrap">
+              {cardBadgeAr}
+            </span>
+            <span className="text-amber-100 drop-shadow text-[9px] sm:text-[11px]">★</span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="mb-1.5" />
+      )}
 
       {/* Main 3-Column Body */}
       <div className="relative z-10 flex-1 px-2.5 sm:px-3.5 pb-2.5 grid grid-cols-[19%_1fr_24%] gap-2 items-stretch">
@@ -1412,17 +1412,19 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
             </div>
           )}
 
-          {(!showStamp || (stampPosition !== 'right_center' && stampPosition !== 'right_bottom')) && (
+          {centerInitiativeLogo && (!showStamp || (stampPosition !== 'right_center' && stampPosition !== 'right_bottom')) && (
             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white p-1 border-2 border-cyan-300 shadow-[0_0_16px_rgba(56,189,248,0.4)] overflow-hidden flex items-center justify-center shrink-0">
-              <SafeImage src={centerInitiativeLogo} alt={headerTitleAr} className="w-full h-full object-contain rounded-full" />
+              <SafeImage src={centerInitiativeLogo} alt={headerTitleAr || 'شعار المبادرة'} className="w-full h-full object-contain rounded-full" />
             </div>
           )}
 
-          <div className="leading-snug font-black text-[7.5px] sm:text-[9.5px] text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)]">
-            {sideSloganLines.map((ln, idx) => (
-              <p key={idx}>{ln}</p>
-            ))}
-          </div>
+          {sideSloganLines.length > 0 && (
+            <div className="leading-snug font-black text-[7.5px] sm:text-[9.5px] text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)]">
+              {sideSloganLines.map((ln, idx) => (
+                <p key={idx}>{ln}</p>
+              ))}
+            </div>
+          )}
 
           {showStamp && stampPosition === 'right_bottom' && (
             <div className="w-16 h-16 sm:w-[80px] sm:h-[80px] rounded-full bg-white p-0.5 sm:p-1 border-2 border-amber-300 shadow-[0_0_16px_rgba(56,189,248,0.4)] overflow-hidden flex items-center justify-center shrink-0">
@@ -1439,7 +1441,7 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
               return (
                 <div
                   key={`${row.label}-${idx}`}
-                  className="flex items-stretch min-h-[17px] sm:min-h-[20px] rounded-full overflow-hidden shadow-sm border border-white bg-white"
+                  className={`flex items-stretch ${memberRows.length > 8 ? 'min-h-[15px]' : 'min-h-[17px] sm:min-h-[20px]'} rounded-full overflow-hidden shadow-sm border border-white bg-white`}
                 >
                   <div className="min-w-[66px] sm:min-w-[84px] shrink-0 flex items-center gap-1 px-1.5 sm:px-2 bg-gradient-to-l from-[#04194a] to-[#0b439c] text-white rounded-full">
                     <Icon className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-cyan-200 shrink-0" />
@@ -1447,7 +1449,7 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
                   </div>
                   <div className="flex-1 min-w-0 flex items-center justify-center px-1.5 py-0.5 text-[#04133a]">
                     <span
-                      className={`${compactRows ? 'text-[7px] sm:text-[8.5px]' : 'text-[7.5px] sm:text-[9px]'} font-black leading-tight text-center break-words ${row.mono ? 'font-mono-num' : ''}`}
+                      className={`${memberRows.length > 8 ? 'text-[6.5px] sm:text-[7.5px]' : compactRows ? 'text-[7px] sm:text-[8.5px]' : 'text-[7.5px] sm:text-[9px]'} font-black leading-tight text-center break-words ${row.mono ? 'font-mono-num' : ''}`}
                       dir={row.mono ? 'ltr' : 'rtl'}
                     >
                       {row.value || '—'}
@@ -1459,28 +1461,34 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
           </div>
 
           {/* Opposite Side: Vice Presidents Names Box */}
-          <div className="rounded-lg bg-white/95 border border-white shadow-inner px-2 py-1.5 text-[#04133a] flex flex-col items-center gap-1">
-            <span className="px-3 py-0.5 rounded-full bg-gradient-to-l from-[#04194a] to-[#0a3d91] text-white text-[7px] sm:text-[8.5px] font-black leading-tight">
-              {vpTitleAr}
-            </span>
-            <div
-              className={`w-full grid ${
-                vpNamesLines.length <= 1
-                  ? 'grid-cols-1'
-                  : vpNamesLines.length === 2
-                    ? 'grid-cols-2 divide-x divide-x-reverse divide-slate-300'
-                    : vpNamesLines.length === 3
-                      ? 'grid-cols-3 divide-x divide-x-reverse divide-slate-300'
-                      : 'grid-cols-2 gap-x-2'
-              } text-center items-center`}
-            >
-              {vpNamesLines.slice(0, 6).map((name, idx) => (
-                <p key={idx} className="text-[6.5px] sm:text-[8px] font-extrabold px-1 leading-snug truncate">
-                  {name}
-                </p>
-              ))}
+          {showVpBox && (
+            <div className="rounded-lg bg-white/95 border border-white shadow-inner px-2 py-1.5 text-[#04133a] flex flex-col items-center gap-1">
+              {vpTitleAr && (
+                <span className="px-3 py-0.5 rounded-full bg-gradient-to-l from-[#04194a] to-[#0a3d91] text-white text-[7px] sm:text-[8.5px] font-black leading-tight">
+                  {vpTitleAr}
+                </span>
+              )}
+              {vpNamesLines.length > 0 && (
+                <div
+                  className={`w-full grid ${
+                    vpNamesLines.length <= 1
+                      ? 'grid-cols-1'
+                      : vpNamesLines.length === 2
+                        ? 'grid-cols-2 divide-x divide-x-reverse divide-slate-300'
+                        : vpNamesLines.length === 3
+                          ? 'grid-cols-3 divide-x divide-x-reverse divide-slate-300'
+                          : 'grid-cols-2 gap-x-2'
+                  } text-center items-center`}
+                >
+                  {vpNamesLines.slice(0, 6).map((name, idx) => (
+                    <p key={idx} className="text-[6.5px] sm:text-[8px] font-extrabold px-1 leading-snug truncate">
+                      {name}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Left Column: Portrait -> President Name & Signature Under Photo -> QR -> Verify */}
@@ -1511,22 +1519,24 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
             </div>
 
             {/* President Name + Signature directly under Photo */}
-            <div className="w-full rounded-md bg-white/95 border border-amber-400 shadow-sm px-1.5 py-0.5 text-center leading-tight">
-              <p className="text-[6px] sm:text-[7px] font-extrabold text-[#0a3d91]">{presidentTitleAr}</p>
-              <p className="text-[7px] sm:text-[8.5px] font-black text-[#04133a] truncate">{presidentNameAr}</p>
-              {presidentSignatureUrl ? (
-                <img src={presidentSignatureUrl} alt="إمضاء رئيس المبادرة" className="h-3.5 sm:h-4.5 mx-auto object-contain mt-0.5" />
-              ) : (
-                <div className="flex flex-col items-center">
-                  <span className="text-[6px] sm:text-[7.5px] italic font-bold text-blue-900 leading-none mt-0.5">
-                    {presidentSignatureText || presidentNameAr}
-                  </span>
-                  <svg viewBox="0 0 80 10" className="w-10 sm:w-12 h-1.5 text-blue-700">
-                    <path d="M4,6 Q28,1 48,6 T76,4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  </svg>
-                </div>
-              )}
-            </div>
+            {showPresidentBox && (
+              <div className="w-full rounded-md bg-white/95 border border-amber-400 shadow-sm px-1.5 py-0.5 text-center leading-tight">
+                {presidentTitleAr && <p className="text-[6px] sm:text-[7px] font-extrabold text-[#0a3d91]">{presidentTitleAr}</p>}
+                {presidentNameAr && <p className="text-[7px] sm:text-[8.5px] font-black text-[#04133a] truncate">{presidentNameAr}</p>}
+                {presidentSignatureUrl ? (
+                  <img src={presidentSignatureUrl} alt="إمضاء رئيس المبادرة" className="h-3.5 sm:h-4.5 mx-auto object-contain mt-0.5" />
+                ) : (presidentSignatureText || presidentNameAr) ? (
+                  <div className="flex flex-col items-center">
+                    <span className="text-[6px] sm:text-[7.5px] italic font-bold text-blue-900 leading-none mt-0.5">
+                      {presidentSignatureText || presidentNameAr}
+                    </span>
+                    <svg viewBox="0 0 80 10" className="w-10 sm:w-12 h-1.5 text-blue-700">
+                      <path d="M4,6 Q28,1 48,6 T76,4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             {showStamp && stampPosition === 'over_signature' && (
               <div className="pointer-events-none absolute -right-1 top-[43%] z-20 w-12 h-12 sm:w-[56px] sm:h-[56px] rounded-full bg-white/95 p-0.5 border border-blue-900/40 shadow-md -rotate-12 overflow-hidden flex items-center justify-center">
@@ -1551,15 +1561,17 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
             )}
           </a>
 
-          <a
-            href={verifyPath}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full rounded-full bg-[#061a44] hover:bg-[#0b2a6b] border border-sky-200/80 px-1.5 py-0.5 sm:py-1 flex items-center justify-center gap-1 text-white shadow transition-colors"
-          >
-            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-300 shrink-0" />
-            <span className="text-[6px] sm:text-[7.5px] font-bold whitespace-nowrap">{verifyBadgeAr}</span>
-          </a>
+          {verifyBadgeAr && (
+            <a
+              href={verifyPath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full rounded-full bg-[#061a44] hover:bg-[#0b2a6b] border border-sky-200/80 px-1.5 py-0.5 sm:py-1 flex items-center justify-center gap-1 text-white shadow transition-colors"
+            >
+              <CheckCircle2 className="w-2.5 h-2.5 text-cyan-300 shrink-0" />
+              <span className="text-[6px] sm:text-[7.5px] font-bold whitespace-nowrap">{verifyBadgeAr}</span>
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -1598,20 +1610,24 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
       {circuitSvg}
 
       {/* Top Gold Metallic Banner */}
-      <div className="relative z-10 pt-2.5 sm:pt-3 px-3 flex justify-center">
-        <div
-          className="px-5 sm:px-8 py-1 rounded-full shadow-md border border-amber-200/90 flex items-center gap-2"
-          style={{
-            background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
-          }}
-        >
-          <span className="text-amber-100 drop-shadow text-[10px] sm:text-xs">★</span>
-          <span className="text-[9.5px] sm:text-[12px] font-black text-[#04133a] font-display whitespace-nowrap">
-            {backTitleAr}
-          </span>
-          <span className="text-amber-100 drop-shadow text-[10px] sm:text-xs">★</span>
+      {backTitleAr ? (
+        <div className="relative z-10 pt-2.5 sm:pt-3 px-3 flex justify-center">
+          <div
+            className="px-5 sm:px-8 py-1 rounded-full shadow-md border border-amber-200/90 flex items-center gap-2"
+            style={{
+              background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
+            }}
+          >
+            <span className="text-amber-100 drop-shadow text-[10px] sm:text-xs">★</span>
+            <span className="text-[9.5px] sm:text-[12px] font-black text-[#04133a] font-display whitespace-nowrap">
+              {backTitleAr}
+            </span>
+            <span className="text-amber-100 drop-shadow text-[10px] sm:text-xs">★</span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="pt-2" />
+      )}
 
       {/* Partner Logos Grid / Row (Logos Only — No White Boxes) */}
       <div className={`relative z-10 px-3 sm:px-5 py-2 flex-1 min-h-[140px] content-center ${backLayoutClass}`}>
@@ -1656,29 +1672,39 @@ export const ElectronicCardView: React.FC<ElectronicCardViewProps> = ({
         </svg>
 
         <div className="relative z-10 flex items-center justify-center gap-2 mb-1.5">
-          <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-white p-0.5 border border-cyan-300 shadow overflow-hidden shrink-0">
-            <SafeImage src={centerInitiativeLogo} alt={headerTitleAr} className="w-full h-full object-contain rounded-full" />
-          </div>
-          <div className="text-center">
-            <p className="text-xs sm:text-sm font-black text-white font-display leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-              {headerTitleAr}
-            </p>
-            <p className="text-[6.5px] sm:text-[8px] font-extrabold text-cyan-300 tracking-wider uppercase mt-0.5 drop-shadow">
-              {headerTitleEn}
-            </p>
-          </div>
+          {backCenterInitiativeLogo && (
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-white p-0.5 border border-cyan-300 shadow overflow-hidden shrink-0">
+              <SafeImage src={backCenterInitiativeLogo} alt={headerTitleAr || 'شعار المبادرة'} className="w-full h-full object-contain rounded-full" />
+            </div>
+          )}
+          {(headerTitleAr || headerTitleEn) && (
+            <div className="text-center">
+              {headerTitleAr && (
+                <p className="text-xs sm:text-sm font-black text-white font-display leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  {headerTitleAr}
+                </p>
+              )}
+              {headerTitleEn && (
+                <p className="text-[6.5px] sm:text-[8px] font-extrabold text-cyan-300 tracking-wider uppercase mt-0.5 drop-shadow">
+                  {headerTitleEn}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
-        <div
-          className="relative z-10 px-5 sm:px-8 py-0.5 rounded-full shadow border border-amber-200/90"
-          style={{
-            background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
-          }}
-        >
-          <span className="text-[8.5px] sm:text-[10.5px] font-black text-[#04133a] font-display whitespace-nowrap">
-            {backSloganAr}
-          </span>
-        </div>
+        {backSloganAr && (
+          <div
+            className="relative z-10 px-5 sm:px-8 py-0.5 rounded-full shadow border border-amber-200/90"
+            style={{
+              background: 'linear-gradient(135deg, #ca8a04 0%, #fde68a 26%, #f59e0b 54%, #fde047 80%, #b45309 100%)'
+            }}
+          >
+            <span className="text-[8.5px] sm:text-[10.5px] font-black text-[#04133a] font-display whitespace-nowrap">
+              {backSloganAr}
+            </span>
+          </div>
+        )}
 
         {showStamp && stampPosition === 'back_left' && (
           <div className="absolute left-4 bottom-7 z-10 w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white p-0.5 border-2 border-amber-300 shadow-lg overflow-hidden flex items-center justify-center">

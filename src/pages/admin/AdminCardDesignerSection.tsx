@@ -19,6 +19,14 @@ function parseExtraFields(raw?: string): ExtraCardField[] {
   }
 }
 
+type LogoPresetOption = { label: string; url: string };
+const BUILTIN_LOGO_PRESETS: LogoPresetOption[] = [
+  { label: 'شعار مبادرة جيل رقمي آمن', url: '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg' },
+  { label: 'شعار اتحاد حكاية وطن', url: '/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg' },
+  { label: 'شعار وزارة التضامن الاجتماعي', url: '/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg' },
+  { label: 'الختم الرسمي — جيل رقمي آمن وحكاية وطن', url: '/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png' }
+];
+
 export const AdminCardDesignerSection: React.FC = () => {
   const { committees } = useApp();
   const [cards, setCards] = useState<any[]>([]);
@@ -55,8 +63,11 @@ export const AdminCardDesignerSection: React.FC = () => {
     sort_order: 10
   });
   const [savedMsg, setSavedMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [saving, setSaving] = useState(false);
   const designDirtyRef = useRef(false);
+  const activeDesignRef = useRef<CardDesign | null>(null);
+  const dirtyLogosRef = useRef<Record<number, CardLogo>>({});
 
   // Live preview mode ('latest' | 'president' | 'vp' | 'selected') & Quick Leadership Card Issuance
   const [previewMode, setPreviewMode] = useState<'latest' | 'president' | 'vp' | 'selected'>('latest');
@@ -75,6 +86,18 @@ export const AdminCardDesignerSection: React.FC = () => {
   const [issuingLeader, setIssuingLeader] = useState(false);
   const [leaderMsg, setLeaderMsg] = useState('');
 
+  const flashSaved = (msg: string) => {
+    setErrorMsg('');
+    setSavedMsg(msg);
+    setTimeout(() => setSavedMsg(''), 3500);
+  };
+
+  const flashError = (msg: string) => {
+    setSavedMsg('');
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4500);
+  };
+
   const load = async () => {
     const [res, pRes] = await Promise.all([apiFetch('/api/admin/cards'), apiFetch('/api/public/partners')]);
     const data = await res.json();
@@ -83,9 +106,11 @@ export const AdminCardDesignerSection: React.FC = () => {
     setDesigns(data.designs || []);
     setLogos(data.logos || []);
     if (data.designs?.[0]) {
+      const fresh = data.designs[0] as CardDesign;
       setActiveDesign((prev) => {
-        const fresh = data.designs[0] as CardDesign;
-        return prev ? { ...fresh, ...prev, id: fresh.id } : fresh;
+        const next = prev && designDirtyRef.current ? { ...fresh, ...prev, id: fresh.id } : fresh;
+        activeDesignRef.current = next;
+        return next;
       });
     }
     setPartnersLibrary(Array.isArray(partners) ? partners : []);
@@ -95,24 +120,33 @@ export const AdminCardDesignerSection: React.FC = () => {
     load();
   }, []);
 
-  const persistDesign = async (designToSave: CardDesign, message: string) => {
+  const persistDesign = async (designToSave: CardDesign, message: string, keepalive = false) => {
     setSaving(true);
     try {
       const res = await apiFetch(`/api/admin/card-designs/${designToSave.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(designToSave)
+        body: JSON.stringify(designToSave),
+        keepalive
       });
       if (res.ok) {
         const updated = (await res.json()) as CardDesign;
         setDesigns((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-        setSavedMsg(message);
-        setTimeout(() => setSavedMsg(''), 3000);
+        if (message) flashSaved(message);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        flashError(err.error || 'تعذر حفظ التعديلات على الكارنيه');
       }
+    } catch {
+      flashError('تعذر الاتصال بالخادم لحفظ تعديلات الكارنيه');
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    activeDesignRef.current = activeDesign;
+  }, [activeDesign]);
 
   useEffect(() => {
     if (!designDirtyRef.current || !activeDesign) return;
@@ -124,41 +158,112 @@ export const AdminCardDesignerSection: React.FC = () => {
     return () => clearTimeout(timer);
   }, [activeDesign]);
 
+  // Flush any pending unsaved design or logo edits on tab switch / page close
+  useEffect(() => {
+    const flushPending = () => {
+      if (designDirtyRef.current && activeDesignRef.current) {
+        const snap = activeDesignRef.current;
+        designDirtyRef.current = false;
+        apiFetch(`/api/admin/card-designs/${snap.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(snap),
+          keepalive: true
+        }).catch(() => {});
+      }
+      const pendingLogos = Object.values(dirtyLogosRef.current);
+      if (pendingLogos.length > 0) {
+        dirtyLogosRef.current = {};
+        pendingLogos.forEach((logo) => {
+          apiFetch(`/api/admin/card-logos/${logo.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(logo),
+            keepalive: true
+          }).catch(() => {});
+        });
+      }
+    };
+    window.addEventListener('beforeunload', flushPending);
+    return () => {
+      window.removeEventListener('beforeunload', flushPending);
+      flushPending();
+    };
+  }, []);
+
   const updateDesignField = <K extends keyof CardDesign>(key: K, val: CardDesign[K]) => {
     designDirtyRef.current = true;
-    setActiveDesign((prev) => (prev ? { ...prev, [key]: val } : prev));
+    setActiveDesign((prev) => {
+      const next = prev ? { ...prev, [key]: val } : prev;
+      activeDesignRef.current = next;
+      return next;
+    });
+  };
+
+  const updateAndSaveDesignPatch = async (patch: Partial<CardDesign>, message: string) => {
+    const base = activeDesignRef.current || activeDesign;
+    if (!base) return;
+    const next = { ...base, ...patch };
+    designDirtyRef.current = false;
+    activeDesignRef.current = next;
+    setActiveDesign(next);
+    await persistDesign(next, message);
   };
 
   const extraFields = parseExtraFields(activeDesign?.extra_rows_json);
 
-  const addExtraField = () => {
-    if (!activeDesign || !newExtraField.label.trim() || !newExtraField.value.trim()) return;
-    const next = [...extraFields, { label: newExtraField.label.trim(), value: newExtraField.value.trim() }];
-    updateDesignField('extra_rows_json', JSON.stringify(next));
+  const addExtraField = async () => {
+    const base = activeDesignRef.current || activeDesign;
+    if (!base) return;
+    const label = newExtraField.label.trim();
+    const value = newExtraField.value.trim();
+    if (!label && !value) {
+      flashError('يرجى كتابة عنوان الحقل أو قيمته قبل الإضافة');
+      return;
+    }
+    const nextRows = [...parseExtraFields(base.extra_rows_json), { label: label || 'معلومة', value }];
     setNewExtraField({ label: '', value: '' });
+    await updateAndSaveDesignPatch(
+      { extra_rows_json: JSON.stringify(nextRows) },
+      'تمت إضافة الحقل إلى الكارنيه وحفظه بنجاح ✓'
+    );
   };
 
-  const removeExtraField = (index: number) => {
-    if (!activeDesign) return;
-    const next = extraFields.filter((_, i) => i !== index);
-    updateDesignField('extra_rows_json', JSON.stringify(next));
+  const removeExtraField = async (index: number) => {
+    const base = activeDesignRef.current || activeDesign;
+    if (!base) return;
+    const nextRows = parseExtraFields(base.extra_rows_json).filter((_, i) => i !== index);
+    await updateAndSaveDesignPatch(
+      { extra_rows_json: JSON.stringify(nextRows) },
+      'تم حذف الحقل من الكارنيه وحفظ التعديل ✓'
+    );
   };
 
   const saveDesign = async () => {
-    if (!activeDesign) return;
+    const target = activeDesignRef.current || activeDesign;
+    if (!target) return;
     designDirtyRef.current = false;
-    await persistDesign(activeDesign, 'تم حفظ كافة التعديلات على تصميم الكارنيه وتطبيقها بنجاح ✓');
+    await persistDesign(target, 'تم حفظ كافة التعديلات على تصميم الكارنيه وتطبيقها بنجاح ✓');
   };
 
   const addLogo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLogo.name || !newLogo.logo_url) return;
-    const res = await apiFetch('/api/admin/card-logos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLogo)
-    });
-    if (res.ok) {
+    const trimmedName = newLogo.name.trim();
+    if (!trimmedName || !newLogo.logo_url) {
+      flashError('يرجى إدخال اسم الشعار واختيار أو رفع صورة الشعار أولاً');
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/admin/card-logos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newLogo, name: trimmedName })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        flashError(err.error || 'تعذر إضافة الشعار');
+        return;
+      }
       const created = (await res.json()) as CardLogo;
       setLogos((prev) => [...prev, created].sort((a, b) => a.sort_order - b.sort_order));
       setNewLogo({
@@ -172,18 +277,26 @@ export const AdminCardDesignerSection: React.FC = () => {
         height_px: 42,
         sort_order: 10
       });
+      flashSaved('تمت إضافة الشعار إلى الكارنيه وحفظه بنجاح ✓');
+    } catch {
+      flashError('حدث خطأ أثناء إضافة الشعار');
     }
   };
 
   const updateLogo = async (logo: CardLogo, showFlash = false) => {
-    await apiFetch(`/api/admin/card-logos/${logo.id}`, {
+    delete dirtyLogosRef.current[logo.id];
+    const res = await apiFetch(`/api/admin/card-logos/${logo.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(logo)
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      flashError(err.error || 'تعذر حفظ تعديل الشعار');
+      return;
+    }
     if (showFlash) {
-      setSavedMsg('تم حفظ تعديل شعار الكارنيه بنجاح ✓');
-      setTimeout(() => setSavedMsg(''), 3000);
+      flashSaved('تم حفظ تعديل شعار الكارنيه بنجاح ✓');
     }
   };
 
@@ -191,18 +304,22 @@ export const AdminCardDesignerSection: React.FC = () => {
     setSaving(true);
     try {
       await Promise.all(logos.map((l) => updateLogo(l, false)));
-      setSavedMsg('تم حفظ جميع شعارات الكارنيه بنجاح ✓');
-      setTimeout(() => setSavedMsg(''), 3000);
+      flashSaved('تم حفظ جميع شعارات الكارنيه بنجاح ✓');
     } finally {
       setSaving(false);
     }
   };
 
   const deleteLogo = async (id: number) => {
-    await apiFetch(`/api/admin/card-logos/${id}`, { method: 'DELETE' });
+    delete dirtyLogosRef.current[id];
+    const res = await apiFetch(`/api/admin/card-logos/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      flashError(err.error || 'تعذر حذف الشعار');
+      return;
+    }
     setLogos((prev) => prev.filter((l) => l.id !== id));
-    setSavedMsg('تم حذف الشعار بنجاح ✓');
-    setTimeout(() => setSavedMsg(''), 3000);
+    flashSaved('تم حذف الشعار من الكارنيه نهائيًا ✓');
   };
 
   const updateCardStatus = async (id: number, status: string) => {
@@ -453,6 +570,7 @@ export const AdminCardDesignerSection: React.FC = () => {
             </div>
 
             {savedMsg && <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg">{savedMsg}</div>}
+            {errorMsg && <div className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{errorMsg}</div>}
 
             <div className="flex justify-center py-2">
               <ElectronicCardView member={sampleMember} design={activeDesign} logos={logos} qrDataUrl="" allowDownload={true} />
@@ -580,18 +698,30 @@ export const AdminCardDesignerSection: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={Boolean(activeDesign.show_stamp)}
-                      onChange={(e) => updateDesignField('show_stamp', e.target.checked ? 1 : 0)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        updateAndSaveDesignPatch(
+                          checked && !activeDesign.stamp_url
+                            ? { show_stamp: 1, stamp_url: OFFICIAL_STAMP_URL }
+                            : { show_stamp: checked ? 1 : 0 },
+                          checked ? 'تم تفعيل الختم على الكارنيه ✓' : 'تم إخفاء الختم من الكارنيه ✓'
+                        );
+                      }}
                     />
                     <span>إظهار الختم الرسمي</span>
                   </label>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="w-16 h-16 rounded-full bg-white border-2 border-amber-300 p-1 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
-                    <img
-                      src={activeDesign.stamp_url || OFFICIAL_STAMP_URL}
-                      alt="الختم الرسمي"
-                      className="w-full h-full object-contain rounded-full"
-                    />
+                    {activeDesign.stamp_url ? (
+                      <img
+                        src={activeDesign.stamp_url}
+                        alt="الختم الرسمي"
+                        className="w-full h-full object-contain rounded-full"
+                      />
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400 text-center leading-tight">لا يوجد ختم</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-[200px] space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -606,22 +736,37 @@ export const AdminCardDesignerSection: React.FC = () => {
                             const file = e.target.files?.[0];
                             if (file) {
                               const url = await uploadAdminFile(file, 'logos');
-                              updateDesignField('stamp_url', url);
-                              updateDesignField('show_stamp', 1);
+                              await updateAndSaveDesignPatch({ stamp_url: url, show_stamp: 1 }, 'تم رفع وحفظ الختم الجديد ✓');
                             }
                           }}
                         />
                       </label>
                       <button
                         type="button"
-                        onClick={() => {
-                          updateDesignField('stamp_url', OFFICIAL_STAMP_URL);
-                          updateDesignField('show_stamp', 1);
-                        }}
+                        onClick={() =>
+                          updateAndSaveDesignPatch(
+                            { stamp_url: OFFICIAL_STAMP_URL, show_stamp: 1 },
+                            'تمت استعادة الختم الرسمي المعتمد ✓'
+                          )
+                        }
                         className="inline-flex items-center gap-1 px-3 py-2 border border-slate-300 rounded-lg bg-white hover:bg-slate-100 font-semibold text-slate-700"
                       >
                         <RotateCcw className="w-3.5 h-3.5" /> استعادة الختم الرسمي المعتمد
                       </button>
+                      {(activeDesign.stamp_url || Boolean(activeDesign.show_stamp)) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateAndSaveDesignPatch(
+                              { stamp_url: '', show_stamp: 0 },
+                              'تم حذف الختم من الكارنيه ✓'
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-3 py-2 border border-red-200 rounded-lg bg-white hover:bg-red-50 font-semibold text-red-600"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> حذف الختم
+                        </button>
+                      )}
                     </div>
                     <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">مكان الختم على الكارنيه</span>
@@ -684,7 +829,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                               const file = e.target.files?.[0];
                               if (file) {
                                 const url = await uploadAdminFile(file, 'logos');
-                                updateDesignField('president_signature_url', url);
+                                await updateAndSaveDesignPatch({ president_signature_url: url }, 'تم رفع وحفظ صورة التوقيع ✓');
                               }
                             }}
                           />
@@ -692,7 +837,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                         {activeDesign.president_signature_url && (
                           <button
                             type="button"
-                            onClick={() => updateDesignField('president_signature_url', '')}
+                            onClick={() => updateAndSaveDesignPatch({ president_signature_url: '' }, 'تم حذف صورة التوقيع ✓')}
                             className="px-2.5 py-2 text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50"
                             title="حذف صورة الإمضاء"
                           >
@@ -755,12 +900,24 @@ export const AdminCardDesignerSection: React.FC = () => {
                     placeholder="عنوان الحقل (مثال: المحافظة أو التخصص)"
                     value={newExtraField.label}
                     onChange={(e) => setNewExtraField((p) => ({ ...p, label: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addExtraField();
+                      }
+                    }}
                     className="flex-1 px-3 py-2 border border-slate-300 rounded-lg bg-white"
                   />
                   <input
                     placeholder="القيمة المعروضة (مثال: القاهرة)"
                     value={newExtraField.value}
                     onChange={(e) => setNewExtraField((p) => ({ ...p, value: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addExtraField();
+                      }
+                    }}
                     className="flex-1 px-3 py-2 border border-slate-300 rounded-lg bg-white"
                   />
                   <button
@@ -778,8 +935,13 @@ export const AdminCardDesignerSection: React.FC = () => {
                         <span>
                           <strong>{field.label}:</strong> {field.value}
                         </span>
-                        <button type="button" onClick={() => removeExtraField(idx)} className="text-red-600 hover:bg-red-50 p-1 rounded">
-                          <Trash2 className="w-3.5 h-3.5" />
+                        <button
+                          type="button"
+                          onClick={() => removeExtraField(idx)}
+                          className="inline-flex items-center gap-1 text-red-600 hover:bg-red-50 px-2 py-1 rounded font-semibold"
+                          title="حذف الحقل من الكارنيه"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> حذف
                         </button>
                       </div>
                     ))}
@@ -792,7 +954,12 @@ export const AdminCardDesignerSection: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={Boolean(activeDesign.show_expiry)}
-                    onChange={(e) => updateDesignField('show_expiry', e.target.checked ? 1 : 0)}
+                    onChange={(e) =>
+                      updateAndSaveDesignPatch(
+                        { show_expiry: e.target.checked ? 1 : 0 },
+                        e.target.checked ? 'تم إظهار تاريخ الانتهاء على الكارنيه ✓' : 'تم إخفاء تاريخ الانتهاء من الكارنيه ✓'
+                      )
+                    }
                   />
                   <span>إظهار تاريخ الانتهاء على الكارنيه</span>
                 </label>
@@ -851,17 +1018,30 @@ export const AdminCardDesignerSection: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <select
-                  value=""
+                  value={
+                    BUILTIN_LOGO_PRESETS.some((p) => p.url === newLogo.logo_url) ||
+                    partnersLibrary.some((p) => p.logo_url === newLogo.logo_url)
+                      ? newLogo.logo_url
+                      : ''
+                  }
                   onChange={(e) => {
-                    if (e.target.value) setNewLogo({ ...newLogo, logo_url: e.target.value });
+                    const url = e.target.value;
+                    if (!url) return;
+                    const label = e.target.options[e.target.selectedIndex]?.text || '';
+                    setNewLogo((prev) => ({
+                      ...prev,
+                      logo_url: url,
+                      name: prev.name.trim() ? prev.name : label
+                    }));
                   }}
                   className="px-3 py-2 border border-slate-300 rounded-lg bg-white"
                 >
                   <option value="">-- اختيار من مكتبة شعارات الجهات --</option>
-                  <option value="/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg">شعار مبادرة جيل رقمي آمن</option>
-                  <option value="/assets/aistudio/FB_IMG_1790438684231_64912c2d.jpg">شعار اتحاد حكاية وطن</option>
-                  <option value="/assets/aistudio/FB_IMG_1792797530698_77e851bd.jpg">شعار وزارة التضامن الاجتماعي</option>
-                  <option value="/assets/aistudio/file_000000006a4c820a8bb98e0bc0a1a48d_248264a5.png">الختم الرسمي — جيل رقمي آمن وحكاية وطن</option>
+                  {BUILTIN_LOGO_PRESETS.map((p) => (
+                    <option key={p.url} value={p.url}>
+                      {p.label}
+                    </option>
+                  ))}
                   {partnersLibrary.map((p) => (
                     <option key={p.id} value={p.logo_url}>
                       {p.name_ar}
@@ -871,18 +1051,45 @@ export const AdminCardDesignerSection: React.FC = () => {
 
                 <label className="flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50">
                   <Upload className="w-3.5 h-3.5 text-blue-700" />
-                  <span>{newLogo.logo_url ? 'تم تحديد الشعار ✓' : 'أو رفع شعار جديد'}</span>
+                  <span>{newLogo.logo_url ? 'تم تحديد الشعار ✓ (اضغط للتبديل)' : 'أو رفع شعار جديد'}</span>
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
-                      if (file) setNewLogo({ ...newLogo, logo_url: await uploadAdminFile(file, 'logos') });
+                      if (file) {
+                        const url = await uploadAdminFile(file, 'logos');
+                        const baseName = file.name.replace(/\.[^.]+$/, '');
+                        setNewLogo((prev) => ({
+                          ...prev,
+                          logo_url: url,
+                          name: prev.name.trim() ? prev.name : baseName
+                        }));
+                      }
                     }}
                   />
                 </label>
               </div>
+
+              {newLogo.logo_url && (
+                <div className="flex items-center justify-between gap-2 bg-white border border-emerald-200 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img src={newLogo.logo_url} alt={newLogo.name || 'معاينة الشعار'} className="w-9 h-9 object-contain rounded border border-slate-200 p-0.5 shrink-0" />
+                    <span className="text-[11px] font-semibold text-emerald-700 truncate">
+                      الشعار جاهز للإضافة ({newLogo.side === 'front' ? 'الوجه الأمامي' : newLogo.side === 'back' ? 'الوجه الخلفي' : 'الوجهين'})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewLogo((prev) => ({ ...prev, logo_url: '' }))}
+                    className="p-1 text-slate-400 hover:text-red-600 rounded"
+                    title="إلغاء الشعار المحدد"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
@@ -928,6 +1135,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                         value={l.name}
                         onChange={(e) => {
                           const updated = { ...l, name: e.target.value };
+                          dirtyLogosRef.current[l.id] = updated;
                           setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
                         }}
                         onBlur={() => updateLogo(l)}
@@ -942,7 +1150,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                           onChange={(e) => {
                             const updated = { ...l, is_active: e.target.checked ? 1 : 0 };
                             setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
-                            updateLogo(updated);
+                            updateLogo(updated, true);
                           }}
                         />
                         <span>مفعل</span>
@@ -950,7 +1158,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                       <button type="button" onClick={() => updateLogo(l, true)} className="px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-semibold inline-flex items-center gap-1">
                         <Save className="w-3 h-3" /> حفظ
                       </button>
-                      <button type="button" onClick={() => deleteLogo(l.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
+                      <button type="button" onClick={() => deleteLogo(l.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="حذف الشعار">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -962,7 +1170,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                       onChange={(e) => {
                         const updated = { ...l, side: e.target.value as any };
                         setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
-                        updateLogo(updated);
+                        updateLogo(updated, true);
                       }}
                       className="px-2 py-1 border border-slate-200 rounded"
                     >
@@ -976,6 +1184,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                       value={l.sort_order}
                       onChange={(e) => {
                         const updated = { ...l, sort_order: Number(e.target.value) };
+                        dirtyLogosRef.current[l.id] = updated;
                         setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
                       }}
                       onBlur={() => updateLogo(l)}
@@ -988,6 +1197,7 @@ export const AdminCardDesignerSection: React.FC = () => {
                       onChange={(e) => {
                         const v = Number(e.target.value);
                         const updated = { ...l, width_px: v, height_px: v };
+                        dirtyLogosRef.current[l.id] = updated;
                         setLogos((prev) => prev.map((x) => (x.id === l.id ? updated : x)));
                       }}
                       onBlur={() => updateLogo(l)}

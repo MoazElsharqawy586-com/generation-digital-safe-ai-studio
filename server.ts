@@ -684,6 +684,7 @@ app.post('/api/public/applications', async (req, res) => {
         full_name: member.full_name,
         full_name_en: member.full_name_en,
         member_number: member.member_number,
+        national_id_number: member.national_id_number,
         avatar_url: member.avatar_url,
         position_title: member.position_title,
         governorate: member.governorate,
@@ -843,7 +844,11 @@ app.get('/api/public/verify/card/:cardNumber', async (req, res) => {
 app.get('/api/public/verify/certificate/:certNumber', async (req, res) => {
   const code = String(req.params.certNumber || '').trim();
   const cert = db
-    .prepare('SELECT certificate_number, recipient_name, course_title, issue_date, trainer_name, template_style, status FROM certificates WHERE upper(certificate_number) = upper(?)')
+    .prepare(
+      `SELECT certificate_number, recipient_name, course_title, issue_date, trainer_name, template_style,
+              activity_type, hours_count, grade_ar, title_ar, subtitle_ar, body_text_ar, primary_color, accent_color, status
+       FROM certificates WHERE upper(certificate_number) = upper(?)`
+    )
     .get(code) as any;
   if (!cert) {
     res.status(404).json({ valid: false, error: 'الشهادة غير موجودة' });
@@ -869,17 +874,27 @@ app.get('/api/member/profile', requireAuth, async (req: AuthedRequest, res) => {
     .prepare('SELECT * FROM notifications WHERE lower(target_email) = lower(?) ORDER BY created_at DESC LIMIT 20')
     .all(req.user!.email);
 
-  const certificates = db
-    .prepare('SELECT * FROM certificates WHERE lower(recipient_email) = lower(?) OR member_id = ? ORDER BY issue_date DESC')
-    .all(req.user!.email, member?.id || -1);
+  const rawCertificates = db
+    .prepare('SELECT * FROM certificates WHERE lower(recipient_email) = lower(?) OR member_id = ? ORDER BY issue_date DESC, id DESC')
+    .all(req.user!.email, member?.id || -1) as any[];
+
+  const baseUrl = resolveBaseUrl(req);
+  const certificates = await Promise.all(
+    rawCertificates.map(async (c) => {
+      const verifyUrl = `${baseUrl}/verify?cert=${encodeURIComponent(c.certificate_number)}`;
+      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 200, margin: 1 });
+      return { ...c, verifyUrl, qrDataUrl };
+    })
+  );
 
   let cardData: any = null;
   if (member) {
     const card = db.prepare('SELECT * FROM membership_cards WHERE member_id = ? ORDER BY id DESC LIMIT 1').get(member.id) as any;
     if (card) {
-      const design = db.prepare('SELECT * FROM card_designs WHERE id = ?').get(card.design_id || 1);
-      const logos = db.prepare('SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC').all();
-      const baseUrl = resolveBaseUrl(req);
+      const design =
+        db.prepare('SELECT * FROM card_designs WHERE id = ?').get(card.design_id || 1) ||
+        db.prepare('SELECT * FROM card_designs ORDER BY is_default DESC, id ASC LIMIT 1').get();
+      const logos = db.prepare('SELECT * FROM card_logos WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').all();
       const verifyUrl = `${baseUrl}/verify?card=${encodeURIComponent(card.card_number)}`;
       const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 });
       cardData = { card, design, logos, qrDataUrl };

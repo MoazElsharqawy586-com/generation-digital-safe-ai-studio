@@ -2,5 +2,5 @@
   "name": "جيل رقمي آمن — Safe Digital Generation",
   "description": "المنصة الإلكترونية الرسمية لمبادرة جيل رقمي آمن تحت مظلة الاتحاد النوعي للجمعيات العاملة في مجال التنمية المجتمعية (حكاية وطن) المشهر برقم 1279 لسنة 2025 بوزارة التضامن الاجتماعي.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

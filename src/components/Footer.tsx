@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, Phone, ExternalLink } from 'lucide-react';
+import { Mail, MapPin, Phone, ExternalLink } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from './SafeImage';
 
@@ -15,6 +15,8 @@ export const Footer: React.FC = () => {
   const umbrellaWebsite = normalizeExternalUrl(settings.umbrella_website_url);
   const email = settings.email || 'generationdigitalsafe@gmail.com';
   const phone = settings.phone || '01277714301';
+  const locationUrl = normalizeExternalUrl(settings.location_url ?? 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8');
+  const locationAddress = (settings.location_address || '').trim();
   const fb = settings.facebook_url || 'https://www.facebook.com/generation.digital.safe';
   const ig = settings.instagram_url || 'https://www.instagram.com/generation.digital.safe/';
   const tt = settings.tiktok_url || 'https://www.tiktok.com/@generation.digital.safe';
@@ -71,34 +73,29 @@ export const Footer: React.FC = () => {
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
-            <div className="flex items-center gap-3 pt-1">
-              <a
-                href={fb}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 text-xs font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1.5"
-              >
-                <span>Facebook</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-              <a
-                href={ig}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 text-xs font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1.5"
-              >
-                <span>Instagram</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-              <a
-                href={tt}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 text-xs font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1.5"
-              >
-                <span>TikTok</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {[
+                { label: 'Facebook', url: normalizeExternalUrl(fb) },
+                { label: 'Instagram', url: normalizeExternalUrl(ig) },
+                { label: 'TikTok', url: normalizeExternalUrl(tt) },
+                { label: 'YouTube', url: normalizeExternalUrl(settings.youtube_url) },
+                { label: 'Telegram', url: normalizeExternalUrl(settings.telegram_url) },
+                { label: 'X', url: normalizeExternalUrl(settings.x_url) },
+                { label: 'LinkedIn', url: normalizeExternalUrl(settings.linkedin_url) }
+              ]
+                .filter((s) => Boolean(s.url))
+                .map((s) => (
+                  <a
+                    key={s.label}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 text-xs font-medium text-slate-200 border border-slate-700 hover:border-cyan-400 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <span>{s.label}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ))}
             </div>
           </div>
 
@@ -164,6 +161,20 @@ export const Footer: React.FC = () => {
                 <span>{t('واتساب مباشر:', 'WhatsApp:')}</span>
                 <span className="font-mono-num" dir="ltr">{phone}</span>
               </a>
+              {locationUrl && (
+                <div>
+                  <a
+                    href={locationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-rose-400 hover:text-rose-300 font-semibold transition-colors"
+                  >
+                    <MapPin className="w-4 h-4 shrink-0" />
+                    <span>{locationAddress || t('الموقع على خرائط جوجل (Google Maps)', 'Location on Google Maps')}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>

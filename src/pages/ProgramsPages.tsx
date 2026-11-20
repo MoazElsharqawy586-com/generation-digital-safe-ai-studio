@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, CheckCircle2, Clock, GraduationCap, MapPin, Users, X } from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, ExternalLink, GraduationCap, MapPin, Users, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
+import { normalizeExternalUrl } from '../lib/url';
 import { OFFICIAL_SITE_ORIGIN, trackEvent, trackPageView } from '../lib/analytics';
 import type { EventItem, ProjectItem, TrainingItem } from '../types';
 
@@ -145,12 +146,47 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                 <span className="font-mono-num inline-flex items-center gap-1"><Calendar className="w-4 h-4 text-blue-700" /> {singleEvent.event_date}</span>
                 <span aria-hidden="true">·</span>
-                <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4 text-blue-700" /> {singleEvent.location}</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                  {singleEvent.attendance_mode === 'online' ? t('أونلاين', 'Online') : singleEvent.attendance_mode === 'hybrid' ? t('هجين', 'Hybrid') : t('حضوري / أوفلاين', 'Offline / Onsite')}
+                </span>
+                {singleEvent.location && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4 text-rose-600" /> {singleEvent.location}</span>
+                  </>
+                )}
                 <span aria-hidden="true">·</span>
                 <span>{singleEvent.organizer}</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-950 font-display">{t(singleEvent.title_ar, singleEvent.title_en)}</h1>
               <p className="text-slate-700 leading-relaxed whitespace-pre-line">{t(singleEvent.description_ar, singleEvent.description_en)}</p>
+              {(singleEvent.location_url || singleEvent.registration_url) && (
+                <div className="flex flex-wrap gap-3 pt-1">
+                  {normalizeExternalUrl(singleEvent.location_url) && (
+                    <a
+                      href={normalizeExternalUrl(singleEvent.location_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      <span>{t('عرض اللوكيشن على خرائط جوجل', 'View Location on Google Maps')}</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  {normalizeExternalUrl(singleEvent.registration_url) && (
+                    <a
+                      href={normalizeExternalUrl(singleEvent.registration_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-cyan-50 text-cyan-800 hover:bg-cyan-100 border border-cyan-200 rounded-xl transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>{t('رابط الفعالية / التسجيل', 'Event / Registration Link')}</span>
+                    </a>
+                  )}
+                </div>
+              )}
               {singleEvent.partners_text && (
                 <p className="text-sm text-slate-600"><strong>{t('الشركاء:', 'Partners:')}</strong> {singleEvent.partners_text}</p>
               )}
@@ -270,7 +306,15 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                       <span className="font-mono-num inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-blue-700" /> {ev.event_date}</span>
                       <span aria-hidden="true">·</span>
-                      <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-blue-700" /> {ev.location}</span>
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                        {ev.attendance_mode === 'online' ? t('أونلاين', 'Online') : ev.attendance_mode === 'hybrid' ? t('هجين', 'Hybrid') : t('حضوري / أوفلاين', 'Offline')}
+                      </span>
+                      {ev.location && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-rose-600" /> {ev.location}</span>
+                        </>
+                      )}
                     </div>
                     <h2 className="text-xl font-bold text-slate-950 font-display">
                       <a
@@ -285,6 +329,33 @@ export const EventsPage: React.FC<{ eventId?: number }> = ({ eventId }) => {
                       </a>
                     </h2>
                     <p className="text-sm text-slate-600 leading-relaxed">{t(ev.description_ar, ev.description_en)}</p>
+                    {(normalizeExternalUrl(ev.location_url) || normalizeExternalUrl(ev.registration_url)) && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {normalizeExternalUrl(ev.location_url) && (
+                          <a
+                            href={normalizeExternalUrl(ev.location_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{t('اللوكيشن على الخرائط', 'Location Map')}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                        {normalizeExternalUrl(ev.registration_url) && (
+                          <a
+                            href={normalizeExternalUrl(ev.registration_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-cyan-50 text-cyan-800 hover:bg-cyan-100 border border-cyan-200 rounded-lg"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>{t('رابط الفعالية', 'Event Link')}</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
                     {ev.partners_text && <p className="text-xs text-slate-500">{t('الشركاء:', 'Partners:')} {ev.partners_text}</p>}
                     {extraImgs.length > 0 && (
                       <div className="grid grid-cols-4 gap-2 pt-2">
@@ -448,10 +519,51 @@ export const TrainingsPage: React.FC = () => {
                     <span aria-hidden="true">·</span>
                     <span className="inline-flex items-center gap-1 font-mono-num"><Clock className="w-3.5 h-3.5" /> {tr.hours} {t('ساعة', 'hrs')}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="font-mono-num">{tr.start_date}</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                      {tr.delivery_mode === 'online' ? t('أونلاين', 'Online') : tr.delivery_mode === 'onsite' ? t('حضوري / أوفلاين', 'Offline / Onsite') : t('هجين', 'Hybrid')}
+                    </span>
+                    {tr.start_date && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono-num">{tr.start_date}</span>
+                      </>
+                    )}
                   </div>
                   <h2 className="text-xl font-bold text-slate-950 font-display">{t(tr.title_ar, tr.title_en)}</h2>
                   <p className="text-sm text-slate-600 leading-relaxed">{t(tr.description_ar, tr.description_en)}</p>
+                  {(tr.location || normalizeExternalUrl(tr.location_url) || normalizeExternalUrl(tr.external_registration_url)) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {tr.location && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
+                          <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>{tr.location}</span>
+                        </span>
+                      )}
+                      {normalizeExternalUrl(tr.location_url) && (
+                        <a
+                          href={normalizeExternalUrl(tr.location_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg"
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span>{t('اللوكيشن على الخرائط', 'Location Map')}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      {normalizeExternalUrl(tr.external_registration_url) && (
+                        <a
+                          href={normalizeExternalUrl(tr.external_registration_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-cyan-50 text-cyan-800 hover:bg-cyan-100 border border-cyan-200 rounded-lg"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{t('رابط التدريب / التسجيل', 'Course Link')}</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
@@ -549,6 +661,20 @@ export const ProjectsPage: React.FC = () => {
                   <span className="font-mono-num">{p.execution_date}</span>
                   <span aria-hidden="true">·</span>
                   <span>{p.status === 'active' ? t('مشروع قيد التنفيذ', 'Active') : p.status === 'completed' ? t('مكتمل', 'Completed') : t('مخطط', 'Planned')}</span>
+                  {p.attendance_mode && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                        {p.attendance_mode === 'online' ? t('أونلاين', 'Online') : p.attendance_mode === 'hybrid' ? t('هجين', 'Hybrid') : t('حضوري / أوفلاين', 'Offline')}
+                      </span>
+                    </>
+                  )}
+                  {p.location && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-rose-600" /> {p.location}</span>
+                    </>
+                  )}
                   {p.partners_text && (
                     <>
                       <span aria-hidden="true">·</span>
@@ -558,6 +684,33 @@ export const ProjectsPage: React.FC = () => {
                 </div>
                 <h2 className="text-2xl font-bold text-slate-950 font-display">{t(p.title_ar, p.title_en)}</h2>
                 <p className="text-sm text-slate-700 leading-relaxed">{t(p.description_ar, p.description_en)}</p>
+                {(normalizeExternalUrl(p.location_url) || normalizeExternalUrl(p.external_url)) && (
+                  <div className="flex flex-wrap gap-2">
+                    {normalizeExternalUrl(p.location_url) && (
+                      <a
+                        href={normalizeExternalUrl(p.location_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>{t('اللوكيشن على الخرائط', 'Location Map')}</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                    {normalizeExternalUrl(p.external_url) && (
+                      <a
+                        href={normalizeExternalUrl(p.external_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-cyan-50 text-cyan-800 hover:bg-cyan-100 border border-cyan-200 rounded-lg"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>{t('رابط المبادرة', 'Initiative Link')}</span>
+                      </a>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs">
                   <div>
                     <p className="font-bold text-slate-900 mb-1">{t('الأهداف:', 'Objectives:')}</p>

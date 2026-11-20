@@ -525,6 +525,28 @@ function ensureSchemaMigrations() {
   ensureColumn('card_designs', 'back_title_ar', "TEXT DEFAULT 'شركاء النجاح والشراكات المؤسسية'");
   ensureColumn('card_designs', 'back_slogan_ar', "TEXT DEFAULT 'معاً ... نبني مجتمعاً رقمياً آمناً'");
   ensureColumn('card_designs', 'extra_rows_json', "TEXT DEFAULT '[]'");
+
+  // Extended certificate fields for trainings, workshops, periodic courses & AI-crafted templates
+  ensureColumn('certificates', 'activity_type', "TEXT DEFAULT 'training'");
+  ensureColumn('certificates', 'training_id', 'INTEGER');
+  ensureColumn('certificates', 'event_id', 'INTEGER');
+  ensureColumn('certificates', 'hours_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('certificates', 'grade_ar', "TEXT DEFAULT ''");
+  ensureColumn('certificates', 'title_ar', "TEXT DEFAULT 'شهادة إتمام وتقدير رسمية'");
+  ensureColumn('certificates', 'subtitle_ar', "TEXT DEFAULT ''");
+  ensureColumn('certificates', 'body_text_ar', "TEXT DEFAULT ''");
+  ensureColumn('certificates', 'primary_color', "TEXT DEFAULT '#0A192F'");
+  ensureColumn('certificates', 'accent_color', "TEXT DEFAULT '#06B6D4'");
+
+  // Offline/Hybrid location, Google Maps link & external link support for events, trainings & projects
+  ensureColumn('events', 'attendance_mode', "TEXT NOT NULL DEFAULT 'onsite'");
+  ensureColumn('events', 'location_url', "TEXT DEFAULT ''");
+  ensureColumn('trainings', 'location', "TEXT DEFAULT ''");
+  ensureColumn('trainings', 'location_url', "TEXT DEFAULT ''");
+  ensureColumn('projects', 'attendance_mode', "TEXT NOT NULL DEFAULT 'onsite'");
+  ensureColumn('projects', 'location', "TEXT DEFAULT ''");
+  ensureColumn('projects', 'location_url', "TEXT DEFAULT ''");
+  ensureColumn('projects', 'external_url', "TEXT DEFAULT ''");
 }
 
 const OFFICIAL_SDG_LOGO = '/assets/aistudio/FB_IMG_1789831319399_ac126220.jpg';
@@ -570,6 +592,12 @@ function migrateLogosAndDefaults() {
   insertIfMissing.run('home_logo_url', OFFICIAL_SDG_LOGO);
   insertIfMissing.run('auto_issue_card_on_apply', '1');
   insertIfMissing.run('site_url', 'https://generation-digital-safe.ai.studio');
+  insertIfMissing.run('youtube_url', '');
+  insertIfMissing.run('telegram_url', '');
+  insertIfMissing.run('x_url', '');
+  insertIfMissing.run('linkedin_url', '');
+  insertIfMissing.run('location_url', 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8');
+  insertIfMissing.run('location_address', '');
 
   // Ensure site_url never points to temporary preview URLs and remove leftover QA test news
   db.prepare(
@@ -724,6 +752,8 @@ function seedInitialData() {
     facebook_url: 'https://www.facebook.com/generation.digital.safe',
     instagram_url: 'https://www.instagram.com/generation.digital.safe/',
     tiktok_url: 'https://www.tiktok.com/@generation.digital.safe',
+    location_url: 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8',
+    location_address: '',
     logo_url: OFFICIAL_SDG_LOGO,
     umbrella_logo_url: OFFICIAL_HEKAYET_LOGO,
     ministry_logo_url: OFFICIAL_MOSS_LOGO,

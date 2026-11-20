@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, ExternalLink, Eye, EyeOff, Mail, Phone, Search, ShieldCheck, Upload } from 'lucide-react';
+import { CheckCircle2, CreditCard, ExternalLink, Eye, EyeOff, Mail, MapPin, Phone, Search, ShieldCheck, Upload } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
 import { ElectronicCardView } from '../components/ElectronicCardView';
+import { normalizeExternalUrl } from '../lib/url';
 import { apiFetch } from '../lib/authFetch';
 import type { PartnerItem } from '../types';
 import { parseEgyptianNationalId } from '../lib/egyptianNationalId';
@@ -868,6 +869,8 @@ export const ContactPage: React.FC = () => {
 
   const email = settings.email || 'generationdigitalsafe@gmail.com';
   const phone = settings.phone || '01277714301';
+  const locationUrl = normalizeExternalUrl(settings.location_url ?? 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8');
+  const locationAddress = (settings.location_address || '').trim();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -923,6 +926,24 @@ export const ContactPage: React.FC = () => {
               </span>
               <span className="font-mono-num font-bold" dir="ltr">{phone}</span>
             </a>
+            {locationUrl && (
+              <a
+                href={locationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackEvent('outbound_click', { label: 'contact_google_maps', url: locationUrl })}
+                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100 font-semibold text-sm transition-colors"
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <MapPin className="w-5 h-5 text-rose-600 shrink-0" />
+                  <span className="truncate">{locationAddress || t('موقعنا على خرائط جوجل', 'Our Location on Google Maps')}</span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-bold shrink-0">
+                  <span>{t('فتح الخريطة', 'Open Map')}</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </span>
+              </a>
+            )}
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">

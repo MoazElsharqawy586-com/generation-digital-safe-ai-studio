@@ -102,6 +102,8 @@ export interface EventItem {
   gallery_json: string;
   event_date: string;
   location: string;
+  location_url?: string;
+  attendance_mode?: 'online' | 'onsite' | 'hybrid';
   organizer: string;
   partners_text: string;
   registration_url: string;
@@ -124,6 +126,8 @@ export interface TrainingItem {
   start_date: string;
   hours: number;
   delivery_mode: 'online' | 'onsite' | 'hybrid';
+  location?: string;
+  location_url?: string;
   seats_total: number;
   seats_taken: number;
   external_registration_url: string;
@@ -144,6 +148,10 @@ export interface ProjectItem {
   execution_date: string;
   partners_text: string;
   results_ar: string;
+  attendance_mode?: 'online' | 'onsite' | 'hybrid';
+  location?: string;
+  location_url?: string;
+  external_url?: string;
   share_image_url?: string;
   logo_url?: string;
   status: 'active' | 'completed' | 'planned';
@@ -270,6 +278,16 @@ export interface CertificateItem {
   issue_date: string;
   trainer_name: string;
   template_style: string;
+  activity_type?: string;
+  training_id?: number | null;
+  event_id?: number | null;
+  hours_count?: number;
+  grade_ar?: string;
+  title_ar?: string;
+  subtitle_ar?: string;
+  body_text_ar?: string;
+  primary_color?: string;
+  accent_color?: string;
   status: 'valid' | 'revoked';
 }
 

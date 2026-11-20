@@ -360,6 +360,24 @@ export const MemberPortalPage: React.FC = () => {
               </div>
             )}
 
+            {profile.certificates?.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-bold text-slate-950 font-display flex items-center gap-2">
+                    <Award className="w-5 h-5 text-blue-700" />
+                    <span>{t(`شهاداتي المعتمدة (${profile.certificates.length})`, `My Verified Certificates (${profile.certificates.length})`)}</span>
+                  </h2>
+                </div>
+                <div className="space-y-8">
+                  {profile.certificates.map((cert: any) => (
+                    <div key={cert.id} className="space-y-3 border-t border-slate-100 pt-6 first:border-t-0 first:pt-0">
+                      <CertificateView cert={cert} qrDataUrl={cert.qrDataUrl || ''} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {profile.notifications?.length > 0 && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
                 <h2 className="text-lg font-bold text-slate-950 font-display">{t('الإشعارات', 'Notifications')}</h2>

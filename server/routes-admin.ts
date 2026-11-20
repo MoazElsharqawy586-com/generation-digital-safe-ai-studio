@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { GoogleGenAI, Type } from '@google/genai';
 import { db, generateSafeCode, generateNextMemberNumber } from './db.ts';
 import {
   type AuthedRequest,
@@ -1210,8 +1211,8 @@ router.post('/events', requirePermission('events'), (req: AuthedRequest, res: Re
   const galleryValue = Array.isArray(b.gallery) ? JSON.stringify(b.gallery) : typeof b.gallery_json === 'string' ? b.gallery_json : '[]';
   const info = db
     .prepare(
-      `INSERT INTO events (title_ar, title_en, event_type, description_ar, description_en, cover_image, cover_alt, gallery_json, event_date, location, organizer, partners_text, registration_url, share_image_url, logo_url, status, committee_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO events (title_ar, title_en, event_type, description_ar, description_en, cover_image, cover_alt, gallery_json, event_date, attendance_mode, location, location_url, organizer, partners_text, registration_url, share_image_url, logo_url, status, committee_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.title_ar,
@@ -1223,7 +1224,9 @@ router.post('/events', requirePermission('events'), (req: AuthedRequest, res: Re
       b.cover_alt || '',
       galleryValue,
       b.event_date,
+      b.attendance_mode || 'onsite',
       b.location || '',
+      b.location_url || '',
       b.organizer || 'مبادرة جيل رقمي آمن',
       b.partners_text || '',
       b.registration_url || '',
@@ -1253,7 +1256,7 @@ router.patch('/events/:id', requirePermission('events'), (req: AuthedRequest, re
         : existing.gallery_json;
   db.prepare(
     `UPDATE events SET title_ar = ?, title_en = ?, event_type = ?, description_ar = ?, description_en = ?,
-      cover_image = ?, cover_alt = ?, gallery_json = ?, event_date = ?, location = ?, organizer = ?, partners_text = ?, registration_url = ?, share_image_url = ?, logo_url = ?, status = ?, committee_id = ?
+      cover_image = ?, cover_alt = ?, gallery_json = ?, event_date = ?, attendance_mode = ?, location = ?, location_url = ?, organizer = ?, partners_text = ?, registration_url = ?, share_image_url = ?, logo_url = ?, status = ?, committee_id = ?
      WHERE id = ?`
   ).run(
     b.title_ar ?? existing.title_ar,
@@ -1265,7 +1268,9 @@ router.patch('/events/:id', requirePermission('events'), (req: AuthedRequest, re
     b.cover_alt ?? existing.cover_alt,
     nextGalleryJson,
     b.event_date ?? existing.event_date,
+    b.attendance_mode ?? existing.attendance_mode ?? 'onsite',
     b.location ?? existing.location,
+    b.location_url ?? existing.location_url ?? '',
     b.organizer ?? existing.organizer,
     b.partners_text ?? existing.partners_text,
     b.registration_url ?? existing.registration_url,
@@ -1301,8 +1306,8 @@ router.post('/trainings', requirePermission('trainings'), (req: AuthedRequest, r
   const b = req.body;
   const info = db
     .prepare(
-      `INSERT INTO trainings (title_ar, title_en, track, trainer_name, description_ar, description_en, cover_image, start_date, hours, delivery_mode, seats_total, external_registration_url, registration_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO trainings (title_ar, title_en, track, trainer_name, description_ar, description_en, cover_image, start_date, hours, delivery_mode, location, location_url, seats_total, external_registration_url, registration_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.title_ar,
@@ -1315,6 +1320,8 @@ router.post('/trainings', requirePermission('trainings'), (req: AuthedRequest, r
       b.start_date || '',
       Number(b.hours ?? 12),
       b.delivery_mode || 'hybrid',
+      b.location || '',
+      b.location_url || '',
       Number(b.seats_total ?? 50),
       b.external_registration_url || '',
       b.registration_status || 'open'
@@ -1334,7 +1341,7 @@ router.patch('/trainings/:id', requirePermission('trainings'), (req: AuthedReque
   const b = req.body;
   db.prepare(
     `UPDATE trainings SET title_ar = ?, title_en = ?, track = ?, trainer_name = ?, description_ar = ?, description_en = ?,
-      cover_image = ?, start_date = ?, hours = ?, delivery_mode = ?, seats_total = ?, external_registration_url = ?, registration_status = ?
+      cover_image = ?, start_date = ?, hours = ?, delivery_mode = ?, location = ?, location_url = ?, seats_total = ?, external_registration_url = ?, registration_status = ?
      WHERE id = ?`
   ).run(
     b.title_ar ?? existing.title_ar,
@@ -1347,6 +1354,8 @@ router.patch('/trainings/:id', requirePermission('trainings'), (req: AuthedReque
     b.start_date ?? existing.start_date,
     b.hours !== undefined ? Number(b.hours) : existing.hours,
     b.delivery_mode ?? existing.delivery_mode,
+    b.location ?? existing.location ?? '',
+    b.location_url ?? existing.location_url ?? '',
     b.seats_total !== undefined ? Number(b.seats_total) : existing.seats_total,
     b.external_registration_url ?? existing.external_registration_url,
     b.registration_status ?? existing.registration_status,
@@ -1386,8 +1395,8 @@ router.post('/projects', requirePermission('projects'), (req: AuthedRequest, res
   const galleryValue = Array.isArray(b.gallery) ? JSON.stringify(b.gallery) : typeof b.gallery_json === 'string' ? b.gallery_json : '[]';
   const info = db
     .prepare(
-      `INSERT INTO projects (title_ar, title_en, description_ar, description_en, objectives_ar, target_audience_ar, cover_image, cover_alt, gallery_json, execution_date, partners_text, results_ar, share_image_url, logo_url, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO projects (title_ar, title_en, description_ar, description_en, objectives_ar, target_audience_ar, cover_image, cover_alt, gallery_json, execution_date, partners_text, results_ar, attendance_mode, location, location_url, external_url, share_image_url, logo_url, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       b.title_ar,
@@ -1402,6 +1411,10 @@ router.post('/projects', requirePermission('projects'), (req: AuthedRequest, res
       b.execution_date || '',
       b.partners_text || '',
       b.results_ar || '',
+      b.attendance_mode || 'onsite',
+      b.location || '',
+      b.location_url || '',
+      b.external_url || '',
       b.share_image_url || '',
       b.logo_url || '',
       b.status || 'active'
@@ -1427,7 +1440,7 @@ router.patch('/projects/:id', requirePermission('projects'), (req: AuthedRequest
         : existing.gallery_json;
   db.prepare(
     `UPDATE projects SET title_ar = ?, title_en = ?, description_ar = ?, description_en = ?, objectives_ar = ?,
-      target_audience_ar = ?, cover_image = ?, cover_alt = ?, gallery_json = ?, execution_date = ?, partners_text = ?, results_ar = ?, share_image_url = ?, logo_url = ?, status = ? WHERE id = ?`
+      target_audience_ar = ?, cover_image = ?, cover_alt = ?, gallery_json = ?, execution_date = ?, partners_text = ?, results_ar = ?, attendance_mode = ?, location = ?, location_url = ?, external_url = ?, share_image_url = ?, logo_url = ?, status = ? WHERE id = ?`
   ).run(
     b.title_ar ?? existing.title_ar,
     b.title_en ?? existing.title_en,
@@ -1441,6 +1454,10 @@ router.patch('/projects/:id', requirePermission('projects'), (req: AuthedRequest
     b.execution_date ?? existing.execution_date,
     b.partners_text ?? existing.partners_text,
     b.results_ar ?? existing.results_ar,
+    b.attendance_mode ?? existing.attendance_mode ?? 'onsite',
+    b.location ?? existing.location ?? '',
+    b.location_url ?? existing.location_url ?? '',
+    b.external_url ?? existing.external_url ?? '',
     b.share_image_url ?? existing.share_image_url,
     b.logo_url ?? existing.logo_url,
     b.status ?? existing.status,
@@ -1851,42 +1868,508 @@ router.delete('/brand-logos/:id', requireAnyPermission(['logos', 'settings']), (
   res.json({ success: true });
 });
 
-// ==================== CERTIFICATES ====================
+// ==================== CERTIFICATES & AI CERTIFICATE STUDIO ====================
 router.get('/certificates', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
   const q = req.query.search ? `%${String(req.query.search).trim()}%` : '';
   if (q) {
     res.json(
       db
-        .prepare('SELECT * FROM certificates WHERE certificate_number LIKE ? OR recipient_name LIKE ? OR course_title LIKE ? ORDER BY created_at DESC')
-        .all(q, q, q)
+        .prepare(
+          `SELECT * FROM certificates
+           WHERE certificate_number LIKE ? OR recipient_name LIKE ? OR course_title LIKE ? OR recipient_email LIKE ?
+           ORDER BY created_at DESC, id DESC`
+        )
+        .all(q, q, q, q)
     );
     return;
   }
-  res.json(db.prepare('SELECT * FROM certificates ORDER BY created_at DESC').all());
+  res.json(db.prepare('SELECT * FROM certificates ORDER BY created_at DESC, id DESC').all());
 });
 
-router.post('/certificates', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
-  const b = req.body;
-  const certNumber = b.certificate_number || generateSafeCode('CERT');
+router.get('/certificates/options', requirePermission('certificates'), (_req: AuthedRequest, res: Response) => {
+  const members = db
+    .prepare(
+      `SELECT m.id, m.member_number, m.full_name, m.email, m.governorate, m.position_title, c.name_ar as committee_name
+       FROM members m
+       LEFT JOIN committees c ON c.id = m.committee_id
+       WHERE m.status = 'active'
+       ORDER BY m.id DESC`
+    )
+    .all();
+  const trainings = db
+    .prepare('SELECT id, title_ar, track, trainer_name, hours, start_date, registration_status FROM trainings ORDER BY created_at DESC')
+    .all();
+  const events = db
+    .prepare('SELECT id, title_ar, event_type, event_date, organizer, location, status FROM events ORDER BY event_date DESC')
+    .all();
+  res.json({ members, trainings, events });
+});
+
+router.get('/certificates/program-registrants', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
+  const sourceType = String(req.query.source_type || '');
+  const sourceId = Number(req.query.source_id || 0);
+  if (!sourceId || (sourceType !== 'training' && sourceType !== 'event')) {
+    res.status(400).json({ error: 'حدد البرنامج التدريبي أو الورشة/الفعالية أولاً' });
+    return;
+  }
+
+  if (sourceType === 'training') {
+    const rows = db
+      .prepare('SELECT * FROM training_registrations WHERE training_id = ? ORDER BY created_at DESC')
+      .all(sourceId) as any[];
+    const enriched = rows.map((r) => {
+      const matchedMember =
+        (r.member_number
+          ? (db.prepare('SELECT id, member_number, full_name, email FROM members WHERE member_number = ? LIMIT 1').get(r.member_number) as any)
+          : null) ||
+        (r.email
+          ? (db.prepare('SELECT id, member_number, full_name, email FROM members WHERE lower(email) = lower(?) LIMIT 1').get(r.email) as any)
+          : null);
+      const existingCert = db
+        .prepare(
+          `SELECT id, certificate_number FROM certificates
+           WHERE training_id = ? AND status = 'valid'
+             AND ((member_id IS NOT NULL AND member_id = ?) OR (recipient_email != '' AND lower(recipient_email) = lower(?)) OR trim(recipient_name) = trim(?))
+           LIMIT 1`
+        )
+        .get(sourceId, matchedMember?.id || -1, r.email || '', r.full_name || '') as any;
+      return {
+        ...r,
+        member_id: matchedMember?.id || null,
+        matched_member_number: matchedMember?.member_number || r.member_number || '',
+        already_certified: Boolean(existingCert),
+        certificate_number: existingCert?.certificate_number || null
+      };
+    });
+    res.json(enriched);
+    return;
+  }
+
+  const rows = db
+    .prepare('SELECT * FROM event_registrations WHERE event_id = ? ORDER BY created_at DESC')
+    .all(sourceId) as any[];
+  const enriched = rows.map((r) => {
+    const matchedMember = r.email
+      ? (db.prepare('SELECT id, member_number, full_name, email FROM members WHERE lower(email) = lower(?) LIMIT 1').get(r.email) as any)
+      : null;
+    const existingCert = db
+      .prepare(
+        `SELECT id, certificate_number FROM certificates
+         WHERE event_id = ? AND status = 'valid'
+           AND ((member_id IS NOT NULL AND member_id = ?) OR (recipient_email != '' AND lower(recipient_email) = lower(?)) OR trim(recipient_name) = trim(?))
+         LIMIT 1`
+      )
+      .get(sourceId, matchedMember?.id || -1, r.email || '', r.full_name || '') as any;
+    return {
+      ...r,
+      status: 'confirmed',
+      member_id: matchedMember?.id || null,
+      matched_member_number: matchedMember?.member_number || '',
+      already_certified: Boolean(existingCert),
+      certificate_number: existingCert?.certificate_number || null
+    };
+  });
+  res.json(enriched);
+});
+
+router.post('/certificates/ai-generate', requirePermission('certificates'), async (req: AuthedRequest, res: Response) => {
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
+    res.status(500).json({
+      error: 'مفتاح الذكاء الاصطناعي (GEMINI_API_KEY) غير متاح حاليًا. يرجى التأكد من إعداده في لوحة الأسرار (Settings > Secrets).'
+    });
+    return;
+  }
+
+  const b = req.body || {};
+  const promptText = String(b.prompt || '').trim();
+  const activityType = String(b.activity_type || 'training').trim();
+  const programTitle = String(b.program_title || '').trim();
+  const trainerName = String(b.trainer_name || '').trim();
+  const hoursCount = Number(b.hours_count || 0);
+  const stylePreference = String(b.style_preference || '').trim();
+
+  if (!promptText && !programTitle) {
+    res.status(400).json({ error: 'يرجى كتابة وصف للشهادة أو اختيار اسم التدريب/الورشة/الدوري' });
+    return;
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+
+    const activityLabels: Record<string, string> = {
+      training: 'برنامج تدريبي متخصص',
+      workshop: 'ورشة عمل تطبيقية',
+      periodic: 'دورة / دوري توعوي ومنافسة رقمية',
+      honor: 'تكريم ومشاركة مجتمعية'
+    };
+
+    const userPrompt = [
+      `نوع الفعالية: ${activityLabels[activityType] || activityType}`,
+      programTitle ? `اسم التدريب/الورشة/الدوري: ${programTitle}` : '',
+      trainerName ? `المدرب / الجهة المشرفة: ${trainerName}` : '',
+      hoursCount > 0 ? `عدد الساعات التدريبية: ${hoursCount}` : '',
+      stylePreference ? `الطابع البصري المطلوب: ${stylePreference}` : '',
+      promptText ? `تفاصيل ووصف المطلوب: ${promptText}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: userPrompt,
+      config: {
+        systemInstruction:
+          'أنت خبير تصميم وصياغة شهادات رسمية لمبادرة "جيل رقمي آمن" (تحت مظلة الاتحاد النوعي حكاية وطن المشهر برقم 1279 لسنة 2025 بوزارة التضامن الاجتماعي). أنشئ محتوى شهادة عربية احترافية ورصينة ومناسبة للتدريبات وورش العمل والدوريات الرقمية. اختر template_style من القيم المسموحة فقط: official_navy أو cyber_cyan أو royal_gold أو emerald_honor، وألوان hex متناسقة وواضحة للطباعة.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title_ar: {
+              type: Type.STRING,
+              description: 'عنوان الشهادة الرئيسي بالعربية (مثل: شهادة إتمام وتقدير رسمية أو شهادة اجتياز ورشة عمل).'
+            },
+            subtitle_ar: {
+              type: Type.STRING,
+              description: 'شارة أو عنوان فرعي مختصر للشهادة (مثل: SAFE DIGITAL GENERATION — اعتماد تدريبي).'
+            },
+            course_title: {
+              type: Type.STRING,
+              description: 'اسم التدريب أو الورشة أو الدوري بصياغة رسمية واضحة.'
+            },
+            body_text_ar: {
+              type: Type.STRING,
+              description: 'نص الشهادة الرسمي الذي يسبق اسم البرنامج أو يصف الإنجاز بعبارة احترافية موجزة (جملة إلى جملتين).'
+            },
+            suggested_hours: {
+              type: Type.INTEGER,
+              description: 'عدد الساعات التدريبية المقترح (رقم صحيح، 0 إذا لم يكن مناسبًا).'
+            },
+            suggested_grade: {
+              type: Type.STRING,
+              description: 'التقدير المقترح بالعربية (مثل: امتياز، اجتياز بنجاح، مشاركة فعالة).'
+            },
+            template_style: {
+              type: Type.STRING,
+              description: 'أحد القيم: official_navy, cyber_cyan, royal_gold, emerald_honor'
+            },
+            primary_color: {
+              type: Type.STRING,
+              description: 'كود لون أساسي داكن بصيغة hex مثل #0A192F أو #064E3B أو #78350F.'
+            },
+            accent_color: {
+              type: Type.STRING,
+              description: 'كود لون تمييزي بصيغة hex مثل #06B6D4 أو #D97706 أو #10B981.'
+            }
+          },
+          required: ['title_ar', 'subtitle_ar', 'course_title', 'body_text_ar', 'suggested_hours', 'suggested_grade', 'template_style', 'primary_color', 'accent_color']
+        }
+      }
+    });
+
+    const rawText = (response.text || '').trim();
+    if (!rawText) {
+      res.status(502).json({ error: 'لم يُرجع نموذج الذكاء الاصطناعي استجابة صالحة. يرجى المحاولة مرة أخرى.' });
+      return;
+    }
+
+    const parsed = JSON.parse(rawText);
+    const allowedStyles = ['official_navy', 'cyber_cyan', 'royal_gold', 'emerald_honor'];
+    const safeStyle = allowedStyles.includes(parsed.template_style) ? parsed.template_style : 'official_navy';
+    res.json({
+      ...parsed,
+      template_style: safeStyle
+    });
+  } catch (err: any) {
+    const statusCode = Number(err?.status || err?.code || 500);
+    const msg = String(err?.message || 'حدث خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي');
+    if (statusCode === 400 || statusCode === 403 || /API_KEY|PERMISSION_DENIED/i.test(msg)) {
+      res.status(400).json({ error: 'مفتاح Gemini API غير صالح أو يفتقر للصلاحية. راجع الإعداد في Settings > Secrets.' });
+      return;
+    }
+    if (statusCode === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
+      res.status(429).json({ error: 'تم استهلاك الحد المسموح للطلبات حاليًا. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى.' });
+      return;
+    }
+    res.status(500).json({ error: `تعذر توليد الشهادة بالذكاء الاصطناعي: ${msg}` });
+  }
+});
+
+function insertSingleCertificate(params: {
+  member_id: number | null;
+  recipient_name: string;
+  recipient_email: string;
+  course_title: string;
+  issue_date: string;
+  trainer_name: string;
+  template_style: string;
+  activity_type: string;
+  training_id: number | null;
+  event_id: number | null;
+  hours_count: number;
+  grade_ar: string;
+  title_ar: string;
+  subtitle_ar: string;
+  body_text_ar: string;
+  primary_color: string;
+  accent_color: string;
+}) {
+  const certNumber = generateSafeCode('CERT');
   const qrToken = crypto.randomBytes(10).toString('hex');
   const info = db
     .prepare(
-      `INSERT INTO certificates (certificate_number, member_id, recipient_name, recipient_email, course_title, issue_date, trainer_name, template_style, status, qr_token)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'valid', ?)`
+      `INSERT INTO certificates (
+         certificate_number, member_id, recipient_name, recipient_email, course_title,
+         issue_date, trainer_name, template_style, activity_type, training_id, event_id,
+         hours_count, grade_ar, title_ar, subtitle_ar, body_text_ar, primary_color, accent_color,
+         status, qr_token
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'valid', ?)`
     )
     .run(
       certNumber,
-      b.member_id ? Number(b.member_id) : null,
-      b.recipient_name,
-      b.recipient_email || '',
-      b.course_title,
-      b.issue_date || new Date().toISOString().slice(0, 10),
-      b.trainer_name || 'إدارة التدريب والتثقيف',
-      b.template_style || 'official_navy',
+      params.member_id,
+      params.recipient_name,
+      params.recipient_email,
+      params.course_title,
+      params.issue_date,
+      params.trainer_name,
+      params.template_style,
+      params.activity_type,
+      params.training_id,
+      params.event_id,
+      params.hours_count,
+      params.grade_ar,
+      params.title_ar,
+      params.subtitle_ar,
+      params.body_text_ar,
+      params.primary_color,
+      params.accent_color,
       qrToken
     );
-  logAudit(req, 'create', 'certificate', info.lastInsertRowid, { certNumber, recipient_name: b.recipient_name });
-  res.json(db.prepare('SELECT * FROM certificates WHERE id = ?').get(info.lastInsertRowid));
+
+  if (params.recipient_email) {
+    db.prepare(
+      `INSERT INTO notifications (target_email, title_ar, message_ar, ref_type, ref_id)
+       VALUES (?, ?, ?, 'certificate', ?)`
+    ).run(
+      params.recipient_email,
+      'شهادة إلكترونية جديدة معتمدة',
+      `تم إصدار شهادة "${params.course_title}" برقم ${certNumber}. يمكنك عرضها وتحميلها من بوابة العضو.`,
+      certNumber
+    );
+  }
+
+  return db.prepare('SELECT * FROM certificates WHERE id = ?').get(info.lastInsertRowid) as any;
+}
+
+router.post('/certificates', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
+  const b = req.body || {};
+  const courseTitle = String(b.course_title || '').trim();
+  if (!courseTitle) {
+    res.status(400).json({ error: 'اسم التدريب أو الورشة أو الدوري مطلوب لإصدار الشهادة' });
+    return;
+  }
+
+  const basePayload = {
+    course_title: courseTitle,
+    issue_date: String(b.issue_date || new Date().toISOString().slice(0, 10)),
+    trainer_name: String(b.trainer_name || 'إدارة التدريب والتثقيف'),
+    template_style: String(b.template_style || 'official_navy'),
+    activity_type: String(b.activity_type || 'training'),
+    training_id: b.training_id ? Number(b.training_id) : null,
+    event_id: b.event_id ? Number(b.event_id) : null,
+    hours_count: Number(b.hours_count || 0),
+    grade_ar: String(b.grade_ar || ''),
+    title_ar: String(b.title_ar || 'شهادة إتمام وتقدير رسمية'),
+    subtitle_ar: String(b.subtitle_ar || ''),
+    body_text_ar: String(b.body_text_ar || ''),
+    primary_color: String(b.primary_color || '#0A192F'),
+    accent_color: String(b.accent_color || '#06B6D4')
+  };
+
+  const memberIds: number[] = Array.isArray(b.member_ids)
+    ? b.member_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+    : b.member_id
+      ? [Number(b.member_id)]
+      : [];
+
+  if (memberIds.length > 0) {
+    const created: any[] = [];
+    for (const mId of memberIds) {
+      const m = db.prepare('SELECT id, full_name, email FROM members WHERE id = ?').get(mId) as any;
+      if (!m) continue;
+      const row = insertSingleCertificate({
+        ...basePayload,
+        member_id: m.id,
+        recipient_name: m.full_name,
+        recipient_email: m.email || ''
+      });
+      created.push(row);
+    }
+    if (created.length === 0) {
+      res.status(404).json({ error: 'لم يتم العثور على الأعضاء المحددين' });
+      return;
+    }
+    logAudit(req, 'create_bulk', 'certificate', created.map((c) => c.certificate_number).join(','), {
+      count: created.length,
+      course_title: courseTitle
+    });
+    res.json({ ...created[0], created, count: created.length });
+    return;
+  }
+
+  const recipientName = String(b.recipient_name || '').trim();
+  if (!recipientName) {
+    res.status(400).json({ error: 'يرجى اختيار عضو واحد على الأقل أو كتابة اسم المستفيد' });
+    return;
+  }
+
+  const recipientEmail = String(b.recipient_email || '').trim().toLowerCase();
+  const matchedMember = recipientEmail
+    ? (db.prepare('SELECT id FROM members WHERE lower(email) = lower(?) LIMIT 1').get(recipientEmail) as any)
+    : null;
+
+  const created = insertSingleCertificate({
+    ...basePayload,
+    member_id: matchedMember?.id || null,
+    recipient_name: recipientName,
+    recipient_email: recipientEmail
+  });
+  logAudit(req, 'create', 'certificate', created.id, { certNumber: created.certificate_number, recipient_name: recipientName });
+  res.json({ ...created, created: [created], count: 1 });
+});
+
+router.post('/certificates/award-from-program', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
+  const b = req.body || {};
+  const sourceType = String(b.source_type || '');
+  const sourceId = Number(b.source_id || 0);
+  if (!sourceId || (sourceType !== 'training' && sourceType !== 'event')) {
+    res.status(400).json({ error: 'حدد التدريب أو الورشة/الفعالية أولاً' });
+    return;
+  }
+
+  const program =
+    sourceType === 'training'
+      ? (db.prepare('SELECT * FROM trainings WHERE id = ?').get(sourceId) as any)
+      : (db.prepare('SELECT * FROM events WHERE id = ?').get(sourceId) as any);
+
+  if (!program) {
+    res.status(404).json({ error: 'البرنامج أو الورشة غير موجودة' });
+    return;
+  }
+
+  const selectedRegIds: number[] = Array.isArray(b.registration_ids)
+    ? b.registration_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+    : [];
+
+  let registrations =
+    sourceType === 'training'
+      ? (db.prepare('SELECT * FROM training_registrations WHERE training_id = ?').all(sourceId) as any[])
+      : (db.prepare('SELECT * FROM event_registrations WHERE event_id = ?').all(sourceId) as any[]);
+
+  if (selectedRegIds.length > 0) {
+    registrations = registrations.filter((r) => selectedRegIds.includes(Number(r.id)));
+  } else if (sourceType === 'training' && b.only_completed) {
+    registrations = registrations.filter((r) => r.status === 'completed' || r.status === 'confirmed');
+  }
+
+  if (registrations.length === 0) {
+    res.status(400).json({ error: 'لا يوجد مشاركون مطابقون لإصدار الشهادات لهم' });
+    return;
+  }
+
+  const defaultActivityType =
+    b.activity_type ||
+    (sourceType === 'training'
+      ? 'training'
+      : program.event_type === 'competition'
+        ? 'periodic'
+        : 'workshop');
+
+  const basePayload = {
+    course_title: String(b.course_title || program.title_ar),
+    issue_date: String(b.issue_date || new Date().toISOString().slice(0, 10)),
+    trainer_name: String(b.trainer_name || program.trainer_name || program.organizer || 'إدارة التدريب والتثقيف'),
+    template_style: String(b.template_style || 'official_navy'),
+    activity_type: String(defaultActivityType),
+    training_id: sourceType === 'training' ? sourceId : null,
+    event_id: sourceType === 'event' ? sourceId : null,
+    hours_count: Number(b.hours_count ?? program.hours ?? 0),
+    grade_ar: String(b.grade_ar || ''),
+    title_ar: String(
+      b.title_ar ||
+        (defaultActivityType === 'workshop'
+          ? 'شهادة حضور ومشاركة في ورشة عمل'
+          : defaultActivityType === 'periodic'
+            ? 'شهادة تقدير ومشاركة في الدوري التوعوي'
+            : 'شهادة إتمام برنامج تدريبي')
+    ),
+    subtitle_ar: String(b.subtitle_ar || ''),
+    body_text_ar: String(b.body_text_ar || ''),
+    primary_color: String(b.primary_color || '#0A192F'),
+    accent_color: String(b.accent_color || '#06B6D4')
+  };
+
+  const created: any[] = [];
+  let skipped = 0;
+
+  for (const reg of registrations) {
+    const matchedMember =
+      (reg.member_number
+        ? (db.prepare('SELECT id, full_name, email FROM members WHERE member_number = ? LIMIT 1').get(reg.member_number) as any)
+        : null) ||
+      (reg.email
+        ? (db.prepare('SELECT id, full_name, email FROM members WHERE lower(email) = lower(?) LIMIT 1').get(reg.email) as any)
+        : null);
+
+    const dup =
+      sourceType === 'training'
+        ? db
+            .prepare(
+              `SELECT id FROM certificates WHERE training_id = ? AND status = 'valid'
+               AND ((member_id IS NOT NULL AND member_id = ?) OR (recipient_email != '' AND lower(recipient_email) = lower(?)) OR trim(recipient_name) = trim(?))
+               LIMIT 1`
+            )
+            .get(sourceId, matchedMember?.id || -1, reg.email || '', reg.full_name || '')
+        : db
+            .prepare(
+              `SELECT id FROM certificates WHERE event_id = ? AND status = 'valid'
+               AND ((member_id IS NOT NULL AND member_id = ?) OR (recipient_email != '' AND lower(recipient_email) = lower(?)) OR trim(recipient_name) = trim(?))
+               LIMIT 1`
+            )
+            .get(sourceId, matchedMember?.id || -1, reg.email || '', reg.full_name || '');
+
+    if (dup) {
+      skipped++;
+      continue;
+    }
+
+    const row = insertSingleCertificate({
+      ...basePayload,
+      member_id: matchedMember?.id || null,
+      recipient_name: matchedMember?.full_name || reg.full_name,
+      recipient_email: matchedMember?.email || reg.email || ''
+    });
+    created.push(row);
+
+    if (sourceType === 'training' && reg.status !== 'completed') {
+      db.prepare("UPDATE training_registrations SET status = 'completed' WHERE id = ?").run(reg.id);
+    }
+  }
+
+  logAudit(req, 'award_from_program', 'certificate', `${sourceType}:${sourceId}`, {
+    count: created.length,
+    skipped
+  });
+
+  res.json({ created, count: created.length, skipped });
 });
 
 router.patch('/certificates/:id', requirePermission('certificates'), (req: AuthedRequest, res: Response) => {
@@ -1898,7 +2381,11 @@ router.patch('/certificates/:id', requirePermission('certificates'), (req: Authe
   }
   const b = req.body;
   db.prepare(
-    `UPDATE certificates SET recipient_name = ?, recipient_email = ?, course_title = ?, issue_date = ?, trainer_name = ?, status = ?, template_style = ? WHERE id = ?`
+    `UPDATE certificates SET
+      recipient_name = ?, recipient_email = ?, course_title = ?, issue_date = ?, trainer_name = ?,
+      status = ?, template_style = ?, activity_type = ?, hours_count = ?, grade_ar = ?,
+      title_ar = ?, subtitle_ar = ?, body_text_ar = ?, primary_color = ?, accent_color = ?
+     WHERE id = ?`
   ).run(
     b.recipient_name ?? existing.recipient_name,
     b.recipient_email ?? existing.recipient_email,
@@ -1907,6 +2394,14 @@ router.patch('/certificates/:id', requirePermission('certificates'), (req: Authe
     b.trainer_name ?? existing.trainer_name,
     b.status ?? existing.status,
     b.template_style ?? existing.template_style,
+    b.activity_type ?? existing.activity_type ?? 'training',
+    b.hours_count !== undefined ? Number(b.hours_count) : Number(existing.hours_count || 0),
+    b.grade_ar ?? existing.grade_ar ?? '',
+    b.title_ar ?? existing.title_ar ?? 'شهادة إتمام وتقدير رسمية',
+    b.subtitle_ar ?? existing.subtitle_ar ?? '',
+    b.body_text_ar ?? existing.body_text_ar ?? '',
+    b.primary_color ?? existing.primary_color ?? '#0A192F',
+    b.accent_color ?? existing.accent_color ?? '#06B6D4',
     id
   );
   logAudit(req, 'update', 'certificate', id, req.body);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Edit3, Plus, Save, Trash2, Upload, Users, X } from 'lucide-react';
+import { Award, Edit3, MapPin, Plus, Save, Trash2, Upload, Users, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { uploadAdminFile } from './adminHelpers';
 import { apiFetch } from '../../lib/authFetch';
@@ -938,11 +938,12 @@ export const AdminNewsTab: React.FC = () => {
 };
 
 export const AdminEventsTab: React.FC = () => {
-  const { brandLogos } = useApp();
+  const { brandLogos, settings } = useApp();
+  const defaultMapUrl = settings.location_url || 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8';
   const [items, setItems] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [regs, setRegs] = useState<{ title: string; list: any[] } | null>(null);
+  const [regs, setRegs] = useState<{ eventId: number; title: string; list: any[] } | null>(null);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<any>({
     title_ar: '',
@@ -954,7 +955,10 @@ export const AdminEventsTab: React.FC = () => {
     share_image_url: '',
     logo_url: '',
     event_date: '',
+    attendance_mode: 'onsite',
     location: '',
+    location_url: '',
+    registration_url: '',
     organizer: 'مبادرة جيل رقمي آمن',
     partners_text: '',
     status: 'upcoming',
@@ -999,6 +1003,7 @@ export const AdminEventsTab: React.FC = () => {
             setEditing(null);
             setForm({
               title_ar: '',
+              title_en: '',
               event_type: 'workshop',
               description_ar: '',
               cover_image: '',
@@ -1006,7 +1011,10 @@ export const AdminEventsTab: React.FC = () => {
               share_image_url: '',
               logo_url: '',
               event_date: '',
+              attendance_mode: 'onsite',
               location: '',
+              location_url: '',
+              registration_url: '',
               organizer: 'مبادرة جيل رقمي آمن',
               partners_text: '',
               status: 'upcoming',
@@ -1029,8 +1037,13 @@ export const AdminEventsTab: React.FC = () => {
                 <div className="min-w-0">
                   <h4 className="font-bold text-sm text-slate-950 truncate">{ev.title_ar}</h4>
                   <p className="text-slate-500 font-mono-num truncate">
-                    {ev.event_date} · {ev.location}
+                    {ev.event_date} · {ev.location || (ev.attendance_mode === 'online' ? 'أونلاين' : 'حضوري')}
                   </p>
+                  {ev.location_url && (
+                    <p className="text-[11px] text-rose-700 truncate inline-flex items-center gap-1">
+                      <MapPin className="w-3 h-3 shrink-0" /> لوكيشن مضاف ✓
+                    </p>
+                  )}
                 </div>
               </div>
               <span className="font-semibold text-blue-700 shrink-0">{ev.status}</span>
@@ -1040,7 +1053,7 @@ export const AdminEventsTab: React.FC = () => {
                 type="button"
                 onClick={async () => {
                   const list = await apiFetch(`/api/admin/events/${ev.id}/registrations`).then((r) => r.json());
-                  setRegs({ title: ev.title_ar, list: Array.isArray(list) ? list : [] });
+                  setRegs({ eventId: ev.id, title: ev.title_ar, list: Array.isArray(list) ? list : [] });
                 }}
                 className="inline-flex items-center gap-1 text-slate-700 hover:underline font-semibold"
               >
@@ -1051,7 +1064,19 @@ export const AdminEventsTab: React.FC = () => {
                   type="button"
                     onClick={() => {
                       setEditing(ev);
-                      setForm({ ...ev, title_en: ev.title_en || '', organizer: ev.organizer || '', partners_text: ev.partners_text || '', cover_alt: ev.cover_alt || '', share_image_url: ev.share_image_url || '', logo_url: ev.logo_url || '', gallery: parseGalleryEntries(ev.gallery_json) });
+                      setForm({
+                        ...ev,
+                        title_en: ev.title_en || '',
+                        attendance_mode: ev.attendance_mode || 'onsite',
+                        location_url: ev.location_url || '',
+                        registration_url: ev.registration_url || '',
+                        organizer: ev.organizer || '',
+                        partners_text: ev.partners_text || '',
+                        cover_alt: ev.cover_alt || '',
+                        share_image_url: ev.share_image_url || '',
+                        logo_url: ev.logo_url || '',
+                        gallery: parseGalleryEntries(ev.gallery_json)
+                      });
                       setModal(true);
                     }}
                   className="text-blue-700 font-semibold"
@@ -1104,9 +1129,50 @@ export const AdminEventsTab: React.FC = () => {
                   <option value="completed">منتهي</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input required placeholder="التاريخ والوقت (مثال: 2026-12-12 10:00)" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                <input placeholder="المكان" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <select value={form.attendance_mode || 'onsite'} onChange={(e) => setForm({ ...form, attendance_mode: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold">
+                  <option value="onsite">حضوري / أوفلاين (Offline)</option>
+                  <option value="online">أونلاين (Online)</option>
+                  <option value="hybrid">هجين (حضوري + أونلاين)</option>
+                </select>
+              </div>
+              <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 inline-flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                    <span>المكان واللوكيشن والرابط {form.attendance_mode !== 'online' ? '(للفعاليات الأوفلاين / الهجينة)' : '(اختياري)'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, location_url: defaultMapUrl })}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold"
+                  >
+                    إدراج لوكيشن المبادرة الافتراضي
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    placeholder="المكان / العنوان (مثال: مقر المبادرة / قاعة المؤتمرات)"
+                    value={form.location || ''}
+                    onChange={(e) => setForm({ ...form, location: e.target.value })}
+                    className="px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <input
+                    dir="ltr"
+                    placeholder="رابط اللوكيشن (Google Maps Link)"
+                    value={form.location_url || ''}
+                    onChange={(e) => setForm({ ...form, location_url: e.target.value })}
+                    className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+                  />
+                </div>
+                <input
+                  dir="ltr"
+                  placeholder="رابط إضافي للفعالية / التسجيل / البث (Link) اختياري"
+                  value={form.registration_url || ''}
+                  onChange={(e) => setForm({ ...form, registration_url: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <input placeholder="الجهة المنظمة" value={form.organizer || ''} onChange={(e) => setForm({ ...form, organizer: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
@@ -1141,6 +1207,28 @@ export const AdminEventsTab: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {regs.list.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await apiFetch('/api/admin/certificates/award-from-program', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_type: 'event', source_id: regs.eventId })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    flash(`تم منح ${data.count} شهادة لمشاركي الورشة/الفعالية بنجاح ✓`);
+                    setRegs(null);
+                  } else {
+                    flash(data.error || 'تعذر منح الشهادات');
+                  }
+                }}
+                className="w-full py-2 px-3 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5"
+              >
+                <Award className="w-4 h-4" /> منح شهادات لجميع المشاركين في هذه الورشة/الفعالية
+              </button>
+            )}
             {regs.list.length === 0 ? (
               <p className="text-xs text-slate-500">لا يوجد مسجلون بعد</p>
             ) : (
@@ -1161,11 +1249,12 @@ export const AdminEventsTab: React.FC = () => {
 };
 
 export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects' }> = ({ mode }) => {
-  const { brandLogos } = useApp();
+  const { brandLogos, settings } = useApp();
+  const defaultMapUrl = settings.location_url || 'https://maps.app.goo.gl/7YnZ5SLon7hEydpo8';
   const [items, setItems] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [traineesModal, setTraineesModal] = useState<{ title: string; list: any[] } | null>(null);
+  const [traineesModal, setTraineesModal] = useState<{ trainingId: number; title: string; list: any[] } | null>(null);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState<any>({});
 
@@ -1210,8 +1299,8 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
             setEditing(null);
             setForm(
               mode === 'trainings'
-                ? { title_ar: '', track: 'cybersecurity', trainer_name: '', description_ar: '', cover_image: '', start_date: '', hours: 16, delivery_mode: 'hybrid', seats_total: 50, external_registration_url: '', registration_status: 'open' }
-                : { title_ar: '', description_ar: '', objectives_ar: '', target_audience_ar: '', cover_image: '', cover_alt: '', share_image_url: '', logo_url: '', execution_date: '2026', partners_text: '', results_ar: '', status: 'active', gallery: [] }
+                ? { title_ar: '', track: 'cybersecurity', trainer_name: '', description_ar: '', cover_image: '', start_date: '', hours: 16, delivery_mode: 'hybrid', location: '', location_url: '', seats_total: 50, external_registration_url: '', registration_status: 'open' }
+                : { title_ar: '', description_ar: '', objectives_ar: '', target_audience_ar: '', cover_image: '', cover_alt: '', share_image_url: '', logo_url: '', execution_date: '2026', attendance_mode: 'onsite', location: '', location_url: '', external_url: '', partners_text: '', results_ar: '', status: 'active', gallery: [] }
             );
             setModal(true);
           }}
@@ -1229,6 +1318,11 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-sm text-slate-950 truncate">{item.title_ar}</h4>
                 <p className="text-slate-600 line-clamp-2 mt-0.5">{item.description_ar}</p>
+                {(item.location || item.location_url) && (
+                  <p className="text-[11px] text-rose-700 truncate mt-1 inline-flex items-center gap-1">
+                    <MapPin className="w-3 h-3 shrink-0" /> {item.location || 'لوكيشن مضاف ✓'}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-100">
@@ -1237,7 +1331,7 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                   type="button"
                   onClick={async () => {
                     const list = await apiFetch(`/api/admin/trainings/${item.id}/registrations`).then((r) => r.json());
-                    setTraineesModal({ title: item.title_ar, list: Array.isArray(list) ? list : [] });
+                    setTraineesModal({ trainingId: item.id, title: item.title_ar, list: Array.isArray(list) ? list : [] });
                   }}
                   className="text-slate-700 font-semibold hover:underline"
                 >
@@ -1251,7 +1345,18 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                   type="button"
                   onClick={() => {
                     setEditing(item);
-                    setForm({ ...item, cover_alt: item.cover_alt || '', share_image_url: item.share_image_url || '', logo_url: item.logo_url || '', gallery: parseGalleryEntries(item.gallery_json) });
+                    setForm({
+                      ...item,
+                      attendance_mode: item.attendance_mode || 'onsite',
+                      location: item.location || '',
+                      location_url: item.location_url || '',
+                      external_url: item.external_url || '',
+                      external_registration_url: item.external_registration_url || '',
+                      cover_alt: item.cover_alt || '',
+                      share_image_url: item.share_image_url || '',
+                      logo_url: item.logo_url || '',
+                      gallery: parseGalleryEntries(item.gallery_json)
+                    });
                     setModal(true);
                   }}
                   className="text-blue-700 font-semibold"
@@ -1308,17 +1413,47 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                     <input type="number" placeholder="المقاعد" value={form.seats_total || 50} onChange={(e) => setForm({ ...form, seats_total: Number(e.target.value) })} className="px-3 py-2 border border-slate-300 rounded-lg" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <select value={form.delivery_mode} onChange={(e) => setForm({ ...form, delivery_mode: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
-                      <option value="online">أونلاين</option>
-                      <option value="onsite">حضوري</option>
-                      <option value="hybrid">هجين</option>
+                    <select value={form.delivery_mode} onChange={(e) => setForm({ ...form, delivery_mode: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold">
+                      <option value="online">أونلاين (Online)</option>
+                      <option value="onsite">حضوري / أوفلاين (Offline)</option>
+                      <option value="hybrid">هجين (حضوري + أونلاين)</option>
                     </select>
                     <select value={form.registration_status} onChange={(e) => setForm({ ...form, registration_status: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg">
                       <option value="open">التسجيل مفتوح</option>
                       <option value="closed">التسجيل مغلق</option>
                     </select>
                   </div>
-                  <input dir="ltr" placeholder="رابط تسجيل خارجي (اختياري)" value={form.external_registration_url || ''} onChange={(e) => setForm({ ...form, external_registration_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-num" />
+                  <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-slate-900 inline-flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                        <span>المكان واللوكيشن {form.delivery_mode !== 'online' ? '(للتدريب أو الكورس الأوفلاين / الهجين)' : '(اختياري)'}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, location_url: defaultMapUrl })}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold"
+                      >
+                        إدراج لوكيشن المبادرة الافتراضي
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        placeholder="مكان انعقاد التدريب / الكورس"
+                        value={form.location || ''}
+                        onChange={(e) => setForm({ ...form, location: e.target.value })}
+                        className="px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                      />
+                      <input
+                        dir="ltr"
+                        placeholder="رابط اللوكيشن (Google Maps Link)"
+                        value={form.location_url || ''}
+                        onChange={(e) => setForm({ ...form, location_url: e.target.value })}
+                        className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+                      />
+                    </div>
+                    <input dir="ltr" placeholder="رابط الكورس / التسجيل الخارجي (Link) اختياري" value={form.external_registration_url || ''} onChange={(e) => setForm({ ...form, external_registration_url: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num" />
+                  </div>
                   <textarea required rows={3} placeholder="الوصف" value={form.description_ar || ''} onChange={(e) => setForm({ ...form, description_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
                   <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-lg py-2 cursor-pointer">
                     <Upload className="w-4 h-4 text-blue-700" />
@@ -1328,13 +1463,55 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
                 </>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                     <input placeholder="تاريخ التنفيذ / السنة" value={form.execution_date || ''} onChange={(e) => setForm({ ...form, execution_date: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
                     <input placeholder="الشركاء الداعمون" value={form.partners_text || ''} onChange={(e) => setForm({ ...form, partners_text: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                    <select value={form.attendance_mode || 'onsite'} onChange={(e) => setForm({ ...form, attendance_mode: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold">
+                      <option value="onsite">حضوري / أوفلاين (Offline)</option>
+                      <option value="online">أونلاين (Online)</option>
+                      <option value="hybrid">هجين</option>
+                    </select>
                     <select value={form.status || 'active'} onChange={(e) => setForm({ ...form, status: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg bg-white">
                       <option value="active">نشط</option>
                       <option value="completed">مكتمل</option>
                     </select>
+                  </div>
+                  <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-slate-900 inline-flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                        <span>المكان واللوكيشن والرابط {form.attendance_mode !== 'online' ? '(للأنشطة الأوفلاين / الميدانية)' : '(اختياري)'}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, location_url: defaultMapUrl })}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold"
+                      >
+                        إدراج لوكيشن المبادرة الافتراضي
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        placeholder="مكان التنفيذ (مثال: مقر المبادرة / المحافظة)"
+                        value={form.location || ''}
+                        onChange={(e) => setForm({ ...form, location: e.target.value })}
+                        className="px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                      />
+                      <input
+                        dir="ltr"
+                        placeholder="رابط اللوكيشن (Google Maps Link)"
+                        value={form.location_url || ''}
+                        onChange={(e) => setForm({ ...form, location_url: e.target.value })}
+                        className="px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+                      />
+                    </div>
+                    <input
+                      dir="ltr"
+                      placeholder="رابط المبادرة / المشروع / التسجيل (Link) اختياري"
+                      value={form.external_url || ''}
+                      onChange={(e) => setForm({ ...form, external_url: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono-num"
+                    />
                   </div>
                   <input placeholder="الأهداف" value={form.objectives_ar || ''} onChange={(e) => setForm({ ...form, objectives_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
                   <input placeholder="الفئة المستهدفة" value={form.target_audience_ar || ''} onChange={(e) => setForm({ ...form, target_audience_ar: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
@@ -1363,6 +1540,28 @@ export const AdminTrainingsProjectsTab: React.FC<{ mode: 'trainings' | 'projects
         <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-3 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center"><h3 className="font-bold text-sm">متدربو: {traineesModal.title}</h3><button type="button" onClick={() => setTraineesModal(null)}><X className="w-5 h-5" /></button></div>
+            {traineesModal.list.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await apiFetch('/api/admin/certificates/award-from-program', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_type: 'training', source_id: traineesModal.trainingId, only_completed: false })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    flash(`تم منح ${data.count} شهادة للمتدربين بنجاح ✓`);
+                    setTraineesModal(null);
+                  } else {
+                    flash(data.error || 'تعذر منح الشهادات');
+                  }
+                }}
+                className="w-full py-2 px-3 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5"
+              >
+                <Award className="w-4 h-4" /> إصدار ومنح شهادات إتمام التدريب للمتدربين
+              </button>
+            )}
             {traineesModal.list.length === 0 ? <p className="text-xs text-slate-500">لا يوجد متدربون مسجلون بعد</p> : traineesModal.list.map((tr) => (
               <div key={tr.id} className="p-2.5 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
                 <div>

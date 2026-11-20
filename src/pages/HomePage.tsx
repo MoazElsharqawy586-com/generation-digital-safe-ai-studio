@@ -17,6 +17,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { SafeImage } from '../components/SafeImage';
 import { PartnerMarquee } from '../components/PartnerMarquee';
+import { normalizeExternalUrl } from '../lib/url';
 import { trackEvent } from '../lib/analytics';
 import type { EventItem, GalleryItem, NewsItem, ProjectItem, TrainingItem } from '../types';
 
@@ -324,10 +325,30 @@ export const HomePage: React.FC = () => {
                       <GraduationCap className="w-3.5 h-3.5 text-blue-700" />
                       <span>{tr.hours} {t('ساعة تدريبية', 'hrs')}</span>
                       <span aria-hidden="true">·</span>
-                      <span>{tr.delivery_mode === 'online' ? t('أونلاين', 'Online') : tr.delivery_mode === 'onsite' ? t('حضوري', 'Onsite') : t('هجين', 'Hybrid')}</span>
+                      <span>{tr.delivery_mode === 'online' ? t('أونلاين', 'Online') : tr.delivery_mode === 'onsite' ? t('حضوري / أوفلاين', 'Offline') : t('هجين', 'Hybrid')}</span>
                     </div>
                     <h3 className="text-sm font-bold text-slate-900 truncate">{t(tr.title_ar, tr.title_en)}</h3>
-                    <p className="text-xs text-slate-600 truncate mt-0.5">{tr.trainer_name}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-600">
+                      <span className="truncate">{tr.trainer_name}</span>
+                      {tr.location && (
+                        <span className="inline-flex items-center gap-1 text-slate-500 truncate">
+                          <MapPin className="w-3 h-3 text-rose-600 shrink-0" />
+                          <span>{tr.location}</span>
+                        </span>
+                      )}
+                      {normalizeExternalUrl(tr.location_url) && (
+                        <a
+                          href={normalizeExternalUrl(tr.location_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-rose-700 hover:underline font-semibold shrink-0"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          <span>{t('اللوكيشن', 'Map')}</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -358,10 +379,26 @@ export const HomePage: React.FC = () => {
                       <span className="font-mono-num">{ev.event_date}</span>
                     </div>
                     <h3 className="text-sm font-bold text-slate-900 truncate">{t(ev.title_ar, ev.title_en)}</h3>
-                    <p className="text-xs text-slate-600 truncate mt-0.5 inline-flex items-center gap-1">
-                      <MapPin className="w-3 h-3 shrink-0" />
-                      <span>{ev.location}</span>
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-600">
+                      {ev.location && (
+                        <span className="inline-flex items-center gap-1 truncate">
+                          <MapPin className="w-3 h-3 text-rose-600 shrink-0" />
+                          <span className="truncate">{ev.location}</span>
+                        </span>
+                      )}
+                      {normalizeExternalUrl(ev.location_url) && (
+                        <a
+                          href={normalizeExternalUrl(ev.location_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-rose-700 hover:underline font-semibold shrink-0"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          <span>{t('اللوكيشن', 'Map')}</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
